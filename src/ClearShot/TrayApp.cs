@@ -13,21 +13,32 @@ internal sealed class TrayApp : ApplicationContext
     private readonly NotifyIcon _tray;
     private readonly ToolStripMenuItem _fullScreenItem = new("Capture full screen");
     private readonly ToolStripMenuItem _regionItem = new("Capture region");
+    // A hidden control, so signals from other threads (a second copy of ClearShot starting) reach the UI thread.
+    private readonly Control _uiThread = new();
+    private readonly RegisteredWaitHandle _showWait;
     private PreviewToast? _toast;
     private SettingsForm? _settingsForm;
     private bool _busy;
 
-    public TrayApp()
+    /// <param name="showSignal">Set when ClearShot is started again while already running: open the window.</param>
+    /// <param name="openWindow">Open the window now (false when Windows starts ClearShot at sign-in).</param>
+    public TrayApp(EventWaitHandle showSignal, bool openWindow)
     {
+        _uiThread.CreateControl();
+        _showWait = ThreadPool.RegisterWaitForSingleObject(showSignal,
+            (_, _) => _uiThread.BeginInvoke(ShowWindow), null, Timeout.Infinite, executeOnlyOnce: false);
+
         _fullScreenItem.Click += async (_, _) => await FromMenu(region: false);
         _regionItem.Click += async (_, _) => await FromMenu(region: true);
 
         var menu = new ContextMenuStrip();
+        var openItem = new ToolStripMenuItem("Open ClearShot", null, (_, _) => ShowWindow()) { Font = new Font(menu.Font, FontStyle.Bold) };
+        menu.Items.Add(openItem);
+        menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_fullScreenItem);
         menu.Items.Add(_regionItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Open screenshots folder", null, (_, _) => OpenFolder(_settings.SaveFolder));
-        menu.Items.Add("Settings…", null, (_, _) => ShowSettings());
         if (!string.IsNullOrEmpty(AppInfo.DonateUrl))
             menu.Items.Add("Support ClearShot", null, (_, _) => AppInfo.OpenUrl(AppInfo.DonateUrl));
         menu.Items.Add(new ToolStripSeparator());
@@ -40,7 +51,7 @@ internal sealed class TrayApp : ApplicationContext
             ContextMenuStrip = menu,
             Visible = true,
         };
-        _tray.DoubleClick += (_, _) => OpenFolder(_settings.SaveFolder);
+        _tray.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) ShowWindow(); };
 
         _hotkeys.Pressed += async id => await Capture(region: id == RegionId);
         Task.Run(ScreenCapturer.WarmUp);
@@ -52,9 +63,10 @@ internal sealed class TrayApp : ApplicationContext
             _settings.WelcomeShown = true;
             TrySaveSettings();
             _tray.ShowBalloonTip(6000, "ClearShot is running",
-                $"{HotkeyText(_settings.FullScreenHotkey)}: full screen\n{HotkeyText(_settings.RegionHotkey)}: drag to pick an area\nRight-click the tray icon for settings.",
+                $"{HotkeyText(_settings.FullScreenHotkey)}: full screen\n{HotkeyText(_settings.RegionHotkey)}: drag to pick an area\nClick the tray icon to open ClearShot.",
                 ToolTipIcon.None);
         }
+        if (openWindow) _uiThread.BeginInvoke(ShowWindow);
     }
 
     private static string HotkeyText(string text) => Hotkey.TryParse(text, out var hk) ? hk.DisplayText : text;
@@ -108,7 +120,7 @@ internal sealed class TrayApp : ApplicationContext
 
     private async Task Capture(bool region)
     {
-        if (_busy || _settingsForm is not null) return;
+        if (_busy) return;
         _busy = true;
         CaptureResult? shot = null;
         Bitmap? cropped = null;
@@ -173,21 +185,31 @@ internal sealed class TrayApp : ApplicationContext
         _toast.Show();
     }
 
-    private void ShowSettings()
+    private void ShowWindow()
     {
         if (_settingsForm is not null)
         {
+            if (_settingsForm.WindowState == FormWindowState.Minimized) _settingsForm.WindowState = FormWindowState.Normal;
             _settingsForm.Activate();
             return;
         }
-        // While the settings are open, pressing a shortcut should record it, not take a screenshot.
-        _hotkeys.UnregisterAll();
-        using (_settingsForm = new SettingsForm(_settings))
+        _settingsForm = new SettingsForm(_settings);
+        // While a shortcut box is recording, pressing a shortcut should record it, not take a screenshot.
+        _settingsForm.RecordingShortcut += recording =>
         {
-            if (_settingsForm.ShowDialog() == DialogResult.OK) TrySaveSettings();
-        }
-        _settingsForm = null;
-        RegisterHotkeys(announceProblems: true);
+            if (recording) _hotkeys.UnregisterAll();
+            else RegisterHotkeys(announceProblems: false);
+        };
+        _settingsForm.FormClosed += (_, _) =>
+        {
+            bool saved = _settingsForm.DialogResult == DialogResult.OK;
+            _settingsForm.Dispose();
+            _settingsForm = null;
+            if (saved) TrySaveSettings();
+            RegisterHotkeys(announceProblems: saved);
+        };
+        _settingsForm.Show();
+        _settingsForm.Activate();
     }
 
     private void TrySaveSettings()
@@ -219,6 +241,8 @@ internal sealed class TrayApp : ApplicationContext
     {
         if (disposing)
         {
+            _showWait.Unregister(null);
+            _uiThread.Dispose();
             _tray.Visible = false;
             _tray.Dispose();
             _hotkeys.Dispose();

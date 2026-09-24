@@ -1,5 +1,6 @@
 namespace ClearShot;
 
+/// <summary>ClearShot's main window: shortcuts, save folder and options.</summary>
 internal sealed class SettingsForm : Form
 {
     private readonly Settings _settings;
@@ -10,22 +11,26 @@ internal sealed class SettingsForm : Form
     private readonly CheckBox _preview = new() { Text = "Show a small preview after each capture", AutoSize = true };
     private readonly CheckBox _pauseMedia = new() { Text = "Pause videos and music while picking a region", AutoSize = true };
     private readonly CheckBox _startup = new() { Text = "Start ClearShot with Windows", AutoSize = true };
+    private readonly Button _closeButton = new() { Text = "Close", AutoSize = true, MinimumSize = new Size(88, 0), DialogResult = DialogResult.Cancel };
+
+    /// <summary>True while a shortcut box is waiting for keys, so the real shortcuts should be switched off.</summary>
+    public event Action<bool>? RecordingShortcut;
 
     public SettingsForm(Settings settings)
     {
         _settings = settings;
-        Text = "ClearShot settings";
+        Text = AppInfo.Name;
         Icon = TrayApp.LoadAppIcon(32);
-        FormBorderStyle = FormBorderStyle.FixedDialog;
+        FormBorderStyle = FormBorderStyle.FixedSingle;
         MaximizeBox = false;
-        MinimizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
+        ShowInTaskbar = true;
         AutoScaleMode = AutoScaleMode.Dpi;
         AutoScaleDimensions = new SizeF(96f, 96f);
         Font = new Font("Segoe UI", 9f);
         AutoSize = true;
         AutoSizeMode = AutoSizeMode.GrowAndShrink;
-        Padding = new Padding(16);
+        Padding = new Padding(20, 16, 20, 16);
 
         _folder.Text = settings.SaveFolder;
         _fullScreen.Value = Parse(settings.FullScreenHotkey, "Alt+C");
@@ -34,22 +39,35 @@ internal sealed class SettingsForm : Form
         _preview.Checked = settings.ShowPreview;
         _pauseMedia.Checked = settings.PauseMediaWhileSelecting;
         _startup.Checked = StartupRegistration.IsEnabled;
-
-        var browse = new Button { Text = "Change…", AutoSize = true };
-        browse.Click += (_, _) => ChooseFolder();
-        var open = new Button { Text = "Open", AutoSize = true };
-        open.Click += (_, _) => TrayApp.OpenFolder(_folder.Text);
+        foreach (var box in new[] { _fullScreen, _region })
+        {
+            box.Enter += (_, _) => RecordingShortcut?.Invoke(true);
+            box.Leave += (_, _) => RecordingShortcut?.Invoke(false);
+            box.Done += (_, _) => ActiveControl = _closeButton;
+        }
 
         var grid = new TableLayoutPanel { ColumnCount = 4, AutoSize = true, Dock = DockStyle.Fill };
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 280));
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 300));
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
+        AddWide(grid, Header());
+
+        AddWide(grid, SectionTitle("Shortcuts"));
+        AddRow(grid, "Full screen", _fullScreen);
+        AddRow(grid, "Pick a region", _region);
+        AddWide(grid, Hint("Click a box, then press the keys you want. ClearShot works in games too."));
+
+        AddWide(grid, SectionTitle("Saving"));
+        var browse = new Button { Text = "Change…", AutoSize = true };
+        browse.Click += (_, _) => ChooseFolder();
+        var open = new Button { Text = "Open folder", AutoSize = true };
+        open.Click += (_, _) => TrayApp.OpenFolder(_folder.Text);
         AddRow(grid, "Save screenshots to", _folder, browse, open);
-        AddRow(grid, "Full screen shortcut", _fullScreen);
-        AddRow(grid, "Region shortcut", _region);
-        AddWide(grid, new Label { Text = "Click a shortcut box, then press the keys you want.", AutoSize = true, ForeColor = SystemColors.GrayText, Margin = new Padding(3, 0, 3, 10) });
+        AddWide(grid, Hint("Every screenshot is saved here as a PNG and copied to your clipboard, ready to paste."));
+
+        AddWide(grid, SectionTitle("Options"));
         AddWide(grid, _sound);
         AddWide(grid, _preview);
         AddWide(grid, _pauseMedia);
@@ -57,19 +75,25 @@ internal sealed class SettingsForm : Form
 
         var about = new Label
         {
-            Text = $"ClearShot {AppInfo.Version}. Free and open source. No account, no uploads: your screenshots never leave this PC.",
+            Text = $"Version {AppInfo.Version}. Free and open source. No account, no uploads: your screenshots never leave this PC.",
             AutoSize = true,
-            MaximumSize = new Size(520, 0),
+            MaximumSize = new Size(640, 0),
             ForeColor = SystemColors.GrayText,
-            Margin = new Padding(3, 14, 3, 6),
+            Margin = new Padding(3, 18, 3, 6),
         };
         AddWide(grid, about);
 
         var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.RightToLeft, AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(0, 8, 0, 0) };
-        var save = new Button { Text = "Save", AutoSize = true, DialogResult = DialogResult.OK };
-        var cancel = new Button { Text = "Cancel", AutoSize = true, DialogResult = DialogResult.Cancel };
-        save.Click += (_, e) => { if (!Commit()) DialogResult = DialogResult.None; };
-        buttons.Controls.Add(cancel);
+        var save = new Button { Text = "Save", AutoSize = true, MinimumSize = new Size(88, 0) };
+        var close = _closeButton;
+        save.Click += (_, _) =>
+        {
+            if (!Commit()) return;
+            DialogResult = DialogResult.OK;
+            Close();
+        };
+        close.Click += (_, _) => Close();
+        buttons.Controls.Add(close);
         buttons.Controls.Add(save);
         if (!string.IsNullOrEmpty(AppInfo.DonateUrl))
         {
@@ -80,9 +104,50 @@ internal sealed class SettingsForm : Form
         AddWide(grid, buttons);
 
         AcceptButton = save;
-        CancelButton = cancel;
+        CancelButton = close;
         Controls.Add(grid);
     }
+
+    protected override void OnShown(EventArgs e)
+    {
+        base.OnShown(e);
+        // Start with focus on a button, not a shortcut box, or the window would open already recording.
+        ActiveControl = _closeButton;
+    }
+
+    private Control Header()
+    {
+        var panel = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 6) };
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        var logo = new PictureBox
+        {
+            Image = TrayApp.LoadAppIcon(48).ToBitmap(),
+            SizeMode = PictureBoxSizeMode.Zoom,
+            Size = new Size(40, 40),
+            Margin = new Padding(0, 2, 12, 0),
+        };
+        var title = new Label { Text = AppInfo.Name, AutoSize = true, Font = new Font("Segoe UI Semibold", 15f), Margin = new Padding(0, 0, 0, 0) };
+        var status = new Label
+        {
+            Text = "Running in your system tray. Close this window and it keeps working.",
+            AutoSize = true,
+            ForeColor = SystemColors.GrayText,
+            Margin = new Padding(2, 0, 0, 0),
+        };
+        var text = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, WrapContents = false, Margin = Padding.Empty };
+        text.Controls.Add(title);
+        text.Controls.Add(status);
+        panel.Controls.Add(logo, 0, 0);
+        panel.Controls.Add(text, 1, 0);
+        return panel;
+    }
+
+    private static Label SectionTitle(string text) =>
+        new() { Text = text, AutoSize = true, Font = new Font("Segoe UI Semibold", 10.5f), Margin = new Padding(3, 16, 3, 6) };
+
+    private static Label Hint(string text) =>
+        new() { Text = text, AutoSize = true, MaximumSize = new Size(640, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(3, 2, 3, 4) };
 
     private static Hotkey Parse(string text, string fallback) =>
         Hotkey.TryParse(text, out var hk) ? hk : Hotkey.TryParse(fallback, out var fb) ? fb : default;
@@ -112,7 +177,7 @@ internal sealed class SettingsForm : Form
     {
         if (_fullScreen.Value == _region.Value)
         {
-            MessageBox.Show(this, "The two shortcuts need to be different.", "ClearShot", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, "The two shortcuts need to be different.", AppInfo.Name, MessageBoxButtons.OK, MessageBoxIcon.Information);
             return false;
         }
         try
@@ -121,7 +186,7 @@ internal sealed class SettingsForm : Form
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, $"ClearShot can't save to that folder.\n\n{ex.Message}", "ClearShot", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show(this, $"ClearShot can't save to that folder.\n\n{ex.Message}", AppInfo.Name, MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return false;
         }
 

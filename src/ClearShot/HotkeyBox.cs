@@ -8,6 +8,9 @@ internal sealed class HotkeyBox : TextBox
 {
     private Hotkey _value;
 
+    /// <summary>Raised once a shortcut has been recorded, or Esc pressed, so the form can move focus on.</summary>
+    public event EventHandler? Done;
+
     public HotkeyBox()
     {
         ReadOnly = true;
@@ -48,7 +51,7 @@ internal sealed class HotkeyBox : TextBox
         if (e.KeyCode == Keys.Escape && e.Modifiers == Keys.None)
         {
             Text = _value.DisplayText;
-            Parent?.SelectNextControl(this, true, true, true, true);
+            Done?.Invoke(this, EventArgs.Empty);
             return;
         }
         TryAccept(e.KeyCode, e.Modifiers);
@@ -66,7 +69,7 @@ internal sealed class HotkeyBox : TextBox
         if (!Hotkey.IsUsableKey(key)) return;
         bool win = (GetKeyState(0x5B) & 0x8000) != 0 || (GetKeyState(0x5C) & 0x8000) != 0;
         Value = new Hotkey(key, modifiers.HasFlag(Keys.Control), modifiers.HasFlag(Keys.Alt), modifiers.HasFlag(Keys.Shift), win);
-        SelectionLength = 0;
+        Done?.Invoke(this, EventArgs.Empty);
     }
 
     [DllImport("user32.dll")]
