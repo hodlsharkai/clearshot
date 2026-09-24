@@ -13,6 +13,7 @@ internal sealed class SettingsForm : Form
     private readonly CheckBox _hdrJxr = new() { Text = "Save a .jxr copy (opens in HDR in Windows Photos)", AutoSize = true };
     private readonly CheckBox _hdrPng = new() { Text = "Save an HDR PNG copy (shows in HDR in Chrome and Edge)", AutoSize = true };
     private readonly CheckBox _startup = new() { Text = "Start ClearShot with Windows", AutoSize = true };
+    private readonly ComboBox _theme = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 160 };
     private readonly Button _closeButton = new() { Text = "Close", AutoSize = true, MinimumSize = new Size(88, 0), DialogResult = DialogResult.Cancel };
 
     /// <summary>True while a shortcut box is waiting for keys, so the real shortcuts should be switched off.</summary>
@@ -43,6 +44,8 @@ internal sealed class SettingsForm : Form
         _hdrJxr.Checked = settings.SaveHdrJxr;
         _hdrPng.Checked = settings.SaveHdrPng;
         _startup.Checked = StartupRegistration.IsEnabled;
+        _theme.Items.AddRange(Theme.Choices.Select(c => c.Label).ToArray());
+        _theme.SelectedIndex = Math.Max(0, Array.FindIndex(Theme.Choices, c => c.Value == settings.Theme));
         foreach (var box in new[] { _fullScreen, _region })
         {
             box.Enter += (_, _) => RecordingShortcut?.Invoke(true);
@@ -81,6 +84,7 @@ internal sealed class SettingsForm : Form
         AddWide(grid, _preview);
         AddWide(grid, _pauseMedia);
         AddWide(grid, _startup);
+        AddRow(grid, "Appearance", _theme);
 
         var about = new Label
         {
@@ -92,8 +96,7 @@ internal sealed class SettingsForm : Form
         };
         AddWide(grid, about);
 
-        var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.RightToLeft, AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(0, 8, 0, 0) };
-        var save = new Button { Text = "Save", AutoSize = true, MinimumSize = new Size(88, 0) };
+        var save = new Button { Text = "Save", AutoSize = true, MinimumSize = new Size(88, 0), Anchor = AnchorStyles.Right };
         var close = _closeButton;
         save.Click += (_, _) =>
         {
@@ -102,23 +105,27 @@ internal sealed class SettingsForm : Form
             Close();
         };
         close.Click += (_, _) => Close();
-        buttons.Controls.Add(close);
-        buttons.Controls.Add(save);
-        var footer = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, Dock = DockStyle.Fill, Margin = Padding.Empty };
+        // One row: "Buy me a beer" on the left, Save and Close on the right. Every cell sizes to its content,
+        // so nothing can be pushed out of view at any display scaling.
+        var footer = new TableLayoutPanel { ColumnCount = 3, RowCount = 1, AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(0, 10, 0, 0) };
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        footer.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         if (AppInfo.ActiveDonations.Count > 0)
         {
-            var donate = new LinkLabel { Text = "Buy me a beer", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(3, 14, 3, 3) };
+            var donate = new LinkLabel { Text = "Buy me a beer", AutoSize = true, Anchor = AnchorStyles.Left };
             donate.LinkClicked += (_, _) => DonateForm.ShowFor(AppInfo.ActiveDonations, this);
             footer.Controls.Add(donate, 0, 0);
         }
-        footer.Controls.Add(buttons, 1, 0);
+        footer.Controls.Add(save, 1, 0);
+        footer.Controls.Add(close, 2, 0);
         AddWide(grid, footer);
 
         AcceptButton = save;
         CancelButton = close;
         Controls.Add(grid);
+        Theme.Style(this);
     }
 
     protected override void OnShown(EventArgs e)
@@ -167,6 +174,7 @@ internal sealed class SettingsForm : Form
 
     private static void AddRow(TableLayoutPanel grid, string label, Control field, params Control[] extras)
     {
+        if (field is ComboBox) field.Anchor = AnchorStyles.Left;
         int row = grid.RowCount++;
         grid.Controls.Add(new Label { Text = label, AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(3, 7, 12, 3) }, 0, row);
         grid.Controls.Add(field, 1, row);
@@ -211,6 +219,7 @@ internal sealed class SettingsForm : Form
         _settings.PauseMediaWhileSelecting = _pauseMedia.Checked;
         _settings.SaveHdrJxr = _hdrJxr.Checked;
         _settings.SaveHdrPng = _hdrPng.Checked;
+        _settings.Theme = Theme.Choices[Math.Max(0, _theme.SelectedIndex)].Value;
         try
         {
             StartupRegistration.Set(_startup.Checked);

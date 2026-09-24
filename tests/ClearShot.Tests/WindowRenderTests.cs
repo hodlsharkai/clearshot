@@ -1,72 +1,52 @@
 namespace ClearShot.Tests;
 
-/// <summary>Renders the main window off-screen to a PNG for a visual check. Only runs with CLEARSHOT_RENDER set to a path.</summary>
+/// <summary>
+/// Draws the windows at the primary monitor's real scaling, in light and dark, for a visual check.
+/// Only runs with CLEARSHOT_RENDER set to a folder. The windows are fully transparent while drawn.
+/// </summary>
 public class WindowRenderTests
 {
     [Fact]
-    public void Render_main_window()
+    public void Render_windows_light_and_dark()
     {
-        var output = Environment.GetEnvironmentVariable("CLEARSHOT_RENDER");
-        if (string.IsNullOrEmpty(output)) return;
-
+        var dir = Environment.GetEnvironmentVariable("CLEARSHOT_RENDER");
+        if (string.IsNullOrEmpty(dir)) return;
         Exception? failure = null;
-        var thread = new Thread(() =>
+        var t = new Thread(() =>
         {
             try
             {
                 Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
-                using var form = new SettingsForm(new Settings());
-                form.StartPosition = FormStartPosition.Manual;
-                form.Location = new Point(-20000, -20000);
-                form.ShowInTaskbar = false;
-                form.Show();
-                Application.DoEvents();
-                using var bmp = new Bitmap(form.Width, form.Height);
-                form.DrawToBitmap(bmp, new Rectangle(Point.Empty, form.Size));
-                bmp.Save(output);
-                form.Close();
+                foreach (var theme in new[] { "Light", "Dark" })
+                {
+                    Theme.Apply(theme);
+                    Render(new SettingsForm(new Settings()), Path.Combine(dir, $"main-{theme}.png"));
+                    Render(new DonateForm(AppInfo.ActiveDonations), Path.Combine(dir, $"donate-{theme}.png"));
+                }
             }
             catch (Exception ex) { failure = ex; }
         });
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-        thread.Join();
+        t.SetApartmentState(ApartmentState.STA);
+        t.Start(); t.Join();
         if (failure is not null) throw failure;
     }
 
-    /// <summary>Renders the donate panel with obviously fake addresses. Only runs with CLEARSHOT_RENDER_DONATE set to a path.</summary>
-    [Fact]
-    public void Render_donate_window()
+    static void Render(Form form, string path)
     {
-        var output = Environment.GetEnvironmentVariable("CLEARSHOT_RENDER_DONATE");
-        if (string.IsNullOrEmpty(output)) return;
-
-        Exception? failure = null;
-        var thread = new Thread(() =>
+        using (form)
         {
-            try
-            {
-                Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
-                using var form = new DonateForm(
-                [
-                    new("Bitcoin", "bc1qexampleexampleexampleexampleexample00", "BTC only."),
-                    new("Ethereum and more", "0x0000000000000000000000000000000000000000", "ETH, plus Base and more."),
-                ]);
-                form.StartPosition = FormStartPosition.Manual;
-                form.Location = new Point(-20000, -20000);
-                form.ShowInTaskbar = false;
-                form.Show();
-                Application.DoEvents();
-                using var bmp = new Bitmap(form.Width, form.Height);
-                form.DrawToBitmap(bmp, new Rectangle(Point.Empty, form.Size));
-                bmp.Save(output);
-                form.Close();
-            }
-            catch (Exception ex) { failure = ex; }
-        });
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-        thread.Join();
-        if (failure is not null) throw failure;
+            // On the real primary monitor (125%), fully transparent, so the true scaling applies.
+            form.StartPosition = FormStartPosition.Manual;
+            form.Location = new Point(200, 200);
+            form.Opacity = 0;
+            form.ShowInTaskbar = false;
+            form.Show();
+            Application.DoEvents();
+            Console.WriteLine($"REAL: {Path.GetFileName(path)} size {form.Size} client {form.ClientSize} dpi {form.DeviceDpi} preferred {form.PreferredSize}");
+            using var bmp = new Bitmap(form.Width, form.Height);
+            form.DrawToBitmap(bmp, new Rectangle(Point.Empty, form.Size));
+            bmp.Save(path);
+            form.Close();
+        }
     }
 }

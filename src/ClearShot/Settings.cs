@@ -22,6 +22,7 @@ internal sealed class Settings
     public bool PauseMediaWhileSelecting { get; set; } = true;
     public bool SaveHdrJxr { get; set; }
     public bool SaveHdrPng { get; set; }
+    public string Theme { get; set; } = "System";
     public bool WelcomeShown { get; set; }
 
     public static Settings Load(string? path = null)

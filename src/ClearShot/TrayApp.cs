@@ -25,6 +25,7 @@ internal sealed class TrayApp : ApplicationContext
     /// <param name="openWindow">Open the window now (false when Windows starts ClearShot at sign-in).</param>
     public TrayApp(EventWaitHandle showSignal, bool openWindow)
     {
+        Theme.Apply(_settings.Theme);
         _uiThread.CreateControl();
         _showWait = ThreadPool.RegisterWaitForSingleObject(showSignal,
             (_, _) => _uiThread.BeginInvoke(ShowWindow), null, Timeout.Infinite, executeOnlyOnce: false);
@@ -231,7 +232,11 @@ internal sealed class TrayApp : ApplicationContext
             bool saved = _settingsForm.DialogResult == DialogResult.OK;
             _settingsForm.Dispose();
             _settingsForm = null;
-            if (saved) TrySaveSettings();
+            if (saved)
+            {
+                TrySaveSettings();
+                Theme.Apply(_settings.Theme);
+            }
             RegisterHotkeys(announceProblems: saved);
         };
         _settingsForm.Show();

@@ -43,9 +43,22 @@ internal sealed class DonateForm : Form
             Margin = new Padding(3, 0, 3, 12),
         });
 
-        var tabs = new TabControl { Width = 500, Height = 330 };
-        foreach (var donation in addresses) tabs.TabPages.Add(Page(donation));
-        layout.Controls.Add(tabs);
+        // A row of toggle buttons rather than a TabControl, which doesn't follow dark mode.
+        var picker = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 8) };
+        var pages = new Panel { AutoSize = true, Margin = Padding.Empty };
+        Control? first = null;
+        foreach (var donation in addresses)
+        {
+            var page = Page(donation);
+            page.Visible = false;
+            pages.Controls.Add(page);
+            var choice = new RadioButton { Text = donation.Network, Appearance = Appearance.Button, AutoSize = true, MinimumSize = new Size(90, 0), TextAlign = ContentAlignment.MiddleCenter };
+            choice.CheckedChanged += (_, _) => page.Visible = choice.Checked;
+            picker.Controls.Add(choice);
+            if (first is null) { first = choice; choice.Checked = true; }
+        }
+        layout.Controls.Add(picker);
+        layout.Controls.Add(pages);
 
         layout.Controls.Add(new Label
         {
@@ -61,12 +74,12 @@ internal sealed class DonateForm : Form
         layout.Controls.Add(close);
         CancelButton = close;
         Controls.Add(layout);
+        Theme.Style(this);
     }
 
-    private static TabPage Page(DonationAddress donation)
+    private static Control Page(DonationAddress donation)
     {
-        var page = new TabPage(donation.Network) { Padding = new Padding(12), UseVisualStyleBackColor = true };
-        var stack = new TableLayoutPanel { ColumnCount = 2, Dock = DockStyle.Fill };
+        var stack = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, Width = 500, Margin = Padding.Empty };
         stack.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         stack.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
@@ -75,8 +88,8 @@ internal sealed class DonateForm : Form
             Image = QrImage(donation.Address),
             SizeMode = PictureBoxSizeMode.Zoom,
             Size = new Size(180, 180),
-            Anchor = AnchorStyles.None,
-            Margin = new Padding(0, 0, 0, 10),
+            Anchor = AnchorStyles.Left,
+            Margin = new Padding(3, 0, 0, 10),
         };
         stack.Controls.Add(qr, 0, 0);
         stack.SetColumnSpan(qr, 2);
@@ -85,9 +98,9 @@ internal sealed class DonateForm : Form
         {
             Text = donation.Address,
             ReadOnly = true,
-            Dock = DockStyle.Fill,
+            Width = 410,
+            Anchor = AnchorStyles.Left,
             Font = new Font("Consolas", 9.5f),
-            BackColor = SystemColors.Window,
         };
         var copy = new Button { Text = "Copy", AutoSize = true, MinimumSize = new Size(72, 0) };
         copy.Click += (_, _) =>
@@ -102,8 +115,7 @@ internal sealed class DonateForm : Form
         stack.Controls.Add(accepts, 0, 2);
         stack.SetColumnSpan(accepts, 2);
 
-        page.Controls.Add(stack);
-        return page;
+        return stack;
     }
 
     private static Image QrImage(string text)
