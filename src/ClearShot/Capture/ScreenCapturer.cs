@@ -9,7 +9,8 @@ namespace ClearShot.Capture;
 /// <param name="Image">The captured monitor, 32-bit, fully opaque, at native resolution.</param>
 /// <param name="Bounds">Where that monitor sits on the virtual desktop, in physical pixels.</param>
 /// <param name="UsedFallback">True if Desktop Duplication was unavailable and GDI was used (SDR only).</param>
-internal sealed record CaptureResult(Bitmap Image, Rectangle Bounds, bool WasHdr, bool UsedFallback = false) : IDisposable
+/// <param name="Hdr">The raw HDR pixels, when requested and the screen was in HDR.</param>
+internal sealed record CaptureResult(Bitmap Image, Rectangle Bounds, bool WasHdr, bool UsedFallback = false, HdrFrame? Hdr = null) : IDisposable
 {
     public void Dispose() => Image.Dispose();
 }
@@ -45,12 +46,13 @@ internal static class ScreenCapturer
         }
     }
 
-    public static CaptureResult CaptureMonitorAt(Point screenPoint)
+    /// <param name="keepHdr">Also return the untouched HDR pixels (for saving an HDR copy).</param>
+    public static CaptureResult CaptureMonitorAt(Point screenPoint, bool keepHdr = false)
     {
         var monitor = MonitorFromPoint(screenPoint, MonitorDefaultToNearest);
         try
         {
-            lock (DeviceGate) return CaptureWithDuplication(monitor, retryOnLostDevice: true);
+            lock (DeviceGate) return CaptureWithDuplication(monitor, keepHdr, retryOnLostDevice: true);
         }
         catch (Exception ex)
         {
@@ -59,7 +61,7 @@ internal static class ScreenCapturer
         }
     }
 
-    private static CaptureResult CaptureWithDuplication(IntPtr monitor, bool retryOnLostDevice)
+    private static CaptureResult CaptureWithDuplication(IntPtr monitor, bool keepHdr, bool retryOnLostDevice)
     {
         using var factory = DXGI.CreateDXGIFactory1<IDXGIFactory1>();
         for (uint a = 0; factory.EnumAdapters1(a, out var adapter).Success; a++)
@@ -73,13 +75,13 @@ internal static class ScreenCapturer
                         if (output.Description.Monitor != monitor) continue;
                         try
                         {
-                            return Duplicate(adapter, output);
+                            return Duplicate(adapter, output, keepHdr);
                         }
                         catch (SharpGen.Runtime.SharpGenException ex) when (retryOnLostDevice && IsLostDevice(ex))
                         {
                             // Driver update, GPU reset or display mode change: start again with a fresh device.
                             ForgetDevice(adapter);
-                            return CaptureWithDuplication(monitor, retryOnLostDevice: false);
+                            return CaptureWithDuplication(monitor, keepHdr, retryOnLostDevice: false);
                         }
                     }
                 }
@@ -88,7 +90,7 @@ internal static class ScreenCapturer
         throw new InvalidOperationException("The monitor was not found among the graphics adapter's outputs.");
     }
 
-    private static CaptureResult Duplicate(IDXGIAdapter1 adapter, IDXGIOutput output)
+    private static CaptureResult Duplicate(IDXGIAdapter1 adapter, IDXGIOutput output, bool keepHdr)
     {
         using var output6 = output.QueryInterface<IDXGIOutput6>();
         var desc = output6.Description1;
@@ -103,6 +105,7 @@ internal static class ScreenCapturer
         using (var duplication = output6.DuplicateOutput1(device!, (uint)SupportedFormats.Length, SupportedFormats))
         {
             Bitmap? image = null;
+            HdrFrame? hdrFrame = null;
             // The first frame is normally the whole desktop straight away, but some drivers sometimes hand back
             // an empty first frame. Skip any frame with no desktop image and wait briefly for the next one.
             // A game presents constantly so the wait is short; a completely still desktop may never send
@@ -117,7 +120,7 @@ internal static class ScreenCapturer
                     if (frame.LastPresentTime == 0) continue;
                     using (resource)
                     using (var texture = resource!.QueryInterface<ID3D11Texture2D>())
-                        image = ReadTexture(device, context, texture, desc.DeviceName);
+                        (image, hdrFrame) = ReadTexture(device, context, texture, desc.DeviceName, keepHdr);
                 }
                 finally
                 {
@@ -127,17 +130,23 @@ internal static class ScreenCapturer
                 {
                     image.Dispose();
                     image = null;
+                    hdrFrame = null;
                 }
             }
 
             if (image is null) throw new TimeoutException("No desktop frame arrived.");
             ApplyRotation(image, desc.Rotation);
+            if (hdrFrame is not null && desc.Rotation is not (ModeRotation.Identity or ModeRotation.Unspecified))
+            {
+                Log.Write("HDR copy skipped: rotated monitors aren't supported for HDR copies yet");
+                hdrFrame = null;
+            }
             if (image.Width != bounds.Width || image.Height != bounds.Height)
             {
                 image.Dispose();
                 throw new InvalidOperationException($"Frame size did not match the monitor ({bounds.Size}).");
             }
-            return new CaptureResult(image, bounds, hdr);
+            return new CaptureResult(image, bounds, hdr, Hdr: hdrFrame);
         }
     }
 
@@ -170,7 +179,8 @@ internal static class ScreenCapturer
         ex.ResultCode == Vortice.DXGI.ResultCode.DeviceReset ||
         ex.ResultCode == Vortice.DXGI.ResultCode.AccessLost;
 
-    private static Bitmap ReadTexture(ID3D11Device device, ID3D11DeviceContext context, ID3D11Texture2D texture, string deviceName)
+    private static (Bitmap Image, HdrFrame? Hdr) ReadTexture(ID3D11Device device, ID3D11DeviceContext context, ID3D11Texture2D texture,
+        string deviceName, bool keepHdr)
     {
         var desc = texture.Description;
         var stagingDesc = desc with
@@ -191,9 +201,9 @@ internal static class ScreenCapturer
             int width = (int)desc.Width, height = (int)desc.Height;
             return desc.Format switch
             {
-                Format.B8G8R8A8_UNorm => FromBgra8(mapped.DataPointer, (int)mapped.RowPitch, width, height),
-                Format.R16G16B16A16_Float => FromScRgb16(mapped.DataPointer, (int)mapped.RowPitch, width, height,
-                    DisplayInfo.SdrWhiteScRgb(deviceName)),
+                Format.B8G8R8A8_UNorm => (FromBgra8(mapped.DataPointer, (int)mapped.RowPitch, width, height), null),
+                Format.R16G16B16A16_Float => (FromScRgb16(mapped.DataPointer, (int)mapped.RowPitch, width, height,
+                    DisplayInfo.SdrWhiteScRgb(deviceName)), keepHdr ? CopyHdr(mapped.DataPointer, (int)mapped.RowPitch, width, height) : null),
                 _ => throw new NotSupportedException($"Unexpected desktop format {desc.Format}."),
             };
         }
@@ -222,6 +232,18 @@ internal static class ScreenCapturer
             bitmap.UnlockBits(data);
         }
         return bitmap;
+    }
+
+    private static unsafe HdrFrame CopyHdr(IntPtr src, int srcPitch, int width, int height)
+    {
+        var pixels = new Half[width * height * 4];
+        fixed (Half* dst = pixels)
+        {
+            var d = dst;
+            Parallel.For(0, height, y =>
+                Buffer.MemoryCopy((byte*)src + (long)y * srcPitch, d + (long)y * width * 4, (long)width * 8, (long)width * 8));
+        }
+        return new HdrFrame(width, height, pixels);
     }
 
     private static unsafe Bitmap FromScRgb16(IntPtr src, int srcPitch, int width, int height, float sdrWhite)

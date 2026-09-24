@@ -11,10 +11,10 @@ internal sealed class PreviewToast : Form
     private readonly string _caption;
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 2600 };
 
-    public PreviewToast(Bitmap image, string path, Rectangle monitorBounds)
+    public PreviewToast(Bitmap image, string path, Rectangle monitorBounds, bool hdrCopy)
     {
         _path = path;
-        _caption = $"Copied and saved  ·  {image.Width} × {image.Height}";
+        _caption = $"Copied and saved  ·  {image.Width} × {image.Height}" + (hdrCopy ? "  ·  HDR" : "");
         float scale = Dpi.ScaleFor(monitorBounds);
         int maxW = (int)(240 * scale), maxH = (int)(150 * scale), pad = (int)(8 * scale), captionH = (int)(26 * scale);
         float fit = Math.Min((float)maxW / image.Width, (float)maxH / image.Height);

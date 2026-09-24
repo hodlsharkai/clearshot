@@ -62,6 +62,33 @@ public class LiveCaptureTests
         Assert.True(diff / n < 6, $"tone-mapped output differs from Windows by {diff / n:0.00} levels on average");
     }
 
+    [Fact]
+    public void Saves_true_hdr_copies_of_the_real_screen()
+    {
+        if (Environment.GetEnvironmentVariable("CLEARSHOT_LIVE") != "1") return;
+        SetProcessDpiAwarenessContext(new IntPtr(-4));
+        var primary = Screen.PrimaryScreen!.Bounds;
+        using var shot = ScreenCapturer.CaptureMonitorAt(new Point(primary.X + 10, primary.Y + 10), keepHdr: true);
+        if (!shot.WasHdr) { Console.WriteLine("LIVE: desktop is SDR, HDR copies skipped"); return; }
+        Assert.NotNull(shot.Hdr);
+
+        var dir = Directory.CreateTempSubdirectory().FullName;
+        try
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            HdrWriters.WriteJxr(shot.Hdr!, Path.Combine(dir, "a.jxr"));
+            var jxrMs = sw.ElapsedMilliseconds;
+            sw.Restart();
+            HdrWriters.WritePqPng(shot.Hdr!, Path.Combine(dir, "a.png"));
+            var pngMs = sw.ElapsedMilliseconds;
+            var jxrMb = new FileInfo(Path.Combine(dir, "a.jxr")).Length / 1e6;
+            var pngMb = new FileInfo(Path.Combine(dir, "a.png")).Length / 1e6;
+            Console.WriteLine($"LIVE: jxr {jxrMb:0.0} MB in {jxrMs} ms, HDR png {pngMb:0.0} MB in {pngMs} ms");
+            Assert.True(jxrMb > 0.1 && pngMb > 0.1);
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
     /// <summary>Read-only: connects to Windows' media controls and lists what's playing. Pauses nothing.</summary>
     [Fact]
     public async Task Can_read_windows_media_sessions()

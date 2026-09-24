@@ -6,7 +6,7 @@ A fast, private screenshot tool for Windows.
 - **One key, done.** Press a shortcut and the screenshot is saved and already on your clipboard, ready to paste.
 - **True resolution.** 4K stays 4K, even on scaled displays.
 - **Works in games.** Uses the same Windows capture system as OBS and Xbox Game Bar. Nothing is injected into the game.
-- **HDR done right.** HDR screens are tone-mapped so screenshots look the way they did on screen, not washed out.
+- **HDR done right.** HDR screens are tone-mapped so screenshots look the way they did on screen, not washed out. Optional HDR mode also saves true HDR copies.
 
 ## Shortcuts
 
@@ -23,9 +23,22 @@ Every capture is copied to the clipboard and saved as a PNG in `Pictures\ClearSh
 
 Set it in Settings. Windows 11 may keep Print Screen for its own Snipping Tool; if so, ClearShot tells you and offers to open **Settings > Accessibility > Keyboard > Use the Print screen key to open screen capture** so you can turn it off.
 
-## Install
+## HDR mode
 
-Download `ClearShot.exe` from Releases and run it. No installer and no admin rights needed. Tick **Start ClearShot with Windows** in Settings if you want it always ready.
+When your screen is in HDR, ClearShot can also save true HDR copies next to the normal PNG. Turn on either or both in the ClearShot window:
+
+- **.jxr**: the format Xbox Game Bar uses. Opens in full HDR in Windows Photos.
+- **HDR PNG**: 16-bit PNG in the HDR10 colour space. Shows in full HDR in Chrome and Edge.
+
+The normal PNG is still what gets copied to the clipboard, because most apps can't show HDR.
+
+## Download
+
+**[Download the latest ClearShot.exe](https://github.com/rafflerobot/ClearShot/releases/latest)** and run it. No installer and no admin rights needed.
+
+Windows may say it "protected your PC" because the app isn't code-signed yet. Click **More info**, then **Run anyway**.
+
+Open ClearShot again at any time (or click its tray icon) to change the save folder, shortcuts and options. Tick **Start ClearShot with Windows** if you want it always ready.
 
 ## Privacy
 
@@ -46,6 +59,8 @@ dotnet publish src/ClearShot/ClearShot.csproj -c Release -r win-x64 --self-conta
 ```
 
 Set `CLEARSHOT_LIVE=1` to also run the tests that capture the real screen.
+
+Releases are built by GitHub Actions: pushing a tag such as `v1.1.0` builds, tests and publishes `ClearShot.exe` to Releases.
 
 ## Licence
 

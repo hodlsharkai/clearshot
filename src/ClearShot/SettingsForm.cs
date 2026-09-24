@@ -10,6 +10,8 @@ internal sealed class SettingsForm : Form
     private readonly CheckBox _sound = new() { Text = "Play a shutter sound", AutoSize = true };
     private readonly CheckBox _preview = new() { Text = "Show a small preview after each capture", AutoSize = true };
     private readonly CheckBox _pauseMedia = new() { Text = "Pause videos and music while picking a region", AutoSize = true };
+    private readonly CheckBox _hdrJxr = new() { Text = "Save a .jxr copy (opens in HDR in Windows Photos)", AutoSize = true };
+    private readonly CheckBox _hdrPng = new() { Text = "Save an HDR PNG copy (shows in HDR in Chrome and Edge)", AutoSize = true };
     private readonly CheckBox _startup = new() { Text = "Start ClearShot with Windows", AutoSize = true };
     private readonly Button _closeButton = new() { Text = "Close", AutoSize = true, MinimumSize = new Size(88, 0), DialogResult = DialogResult.Cancel };
 
@@ -38,6 +40,8 @@ internal sealed class SettingsForm : Form
         _sound.Checked = settings.PlaySound;
         _preview.Checked = settings.ShowPreview;
         _pauseMedia.Checked = settings.PauseMediaWhileSelecting;
+        _hdrJxr.Checked = settings.SaveHdrJxr;
+        _hdrPng.Checked = settings.SaveHdrPng;
         _startup.Checked = StartupRegistration.IsEnabled;
         foreach (var box in new[] { _fullScreen, _region })
         {
@@ -66,6 +70,11 @@ internal sealed class SettingsForm : Form
         open.Click += (_, _) => TrayApp.OpenFolder(_folder.Text);
         AddRow(grid, "Save screenshots to", _folder, browse, open);
         AddWide(grid, Hint("Every screenshot is saved here as a PNG and copied to your clipboard, ready to paste."));
+
+        AddWide(grid, SectionTitle("HDR mode"));
+        AddWide(grid, _hdrJxr);
+        AddWide(grid, _hdrPng);
+        AddWide(grid, Hint("When your screen is in HDR, also save true HDR copies next to the normal PNG. The normal PNG is still what gets copied, because most apps can't show HDR."));
 
         AddWide(grid, SectionTitle("Options"));
         AddWide(grid, _sound);
@@ -196,6 +205,8 @@ internal sealed class SettingsForm : Form
         _settings.PlaySound = _sound.Checked;
         _settings.ShowPreview = _preview.Checked;
         _settings.PauseMediaWhileSelecting = _pauseMedia.Checked;
+        _settings.SaveHdrJxr = _hdrJxr.Checked;
+        _settings.SaveHdrPng = _hdrPng.Checked;
         try
         {
             StartupRegistration.Set(_startup.Checked);

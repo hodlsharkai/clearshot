@@ -20,6 +20,8 @@ internal sealed class Settings
     public bool PlaySound { get; set; } = true;
     public bool ShowPreview { get; set; } = true;
     public bool PauseMediaWhileSelecting { get; set; } = true;
+    public bool SaveHdrJxr { get; set; }
+    public bool SaveHdrPng { get; set; }
     public bool WelcomeShown { get; set; }
 
     public static Settings Load(string? path = null)

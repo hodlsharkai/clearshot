@@ -1,4 +1,5 @@
 using System.Drawing.Imaging;
+using System.Runtime;
 using ClearShot.Capture;
 
 namespace ClearShot;
@@ -127,8 +128,10 @@ internal sealed class TrayApp : ApplicationContext
         try
         {
             var cursor = Cursor.Position;
-            shot = await Task.Run(() => ScreenCapturer.CaptureMonitorAt(cursor));
+            bool wantHdr = _settings.SaveHdrJxr || _settings.SaveHdrPng;
+            shot = await Task.Run(() => ScreenCapturer.CaptureMonitorAt(cursor, wantHdr));
             var image = shot.Image;
+            var hdr = shot.Hdr;
             var areaOnScreen = shot.Bounds;
 
             if (region)
@@ -148,6 +151,7 @@ internal sealed class TrayApp : ApplicationContext
                 if (selection is null) return;
                 cropped = shot.Image.Clone(selection.Value, PixelFormat.Format32bppArgb);
                 image = cropped;
+                hdr = hdr?.Crop(selection.Value);
             }
 
             if (_settings.PlaySound) _sound.Play();
@@ -158,7 +162,8 @@ internal sealed class TrayApp : ApplicationContext
             await File.WriteAllBytesAsync(path, png);
             ClipboardOutput.Copy(image, png);
 
-            if (_settings.ShowPreview) ShowPreview(image, path, areaOnScreen);
+            if (_settings.ShowPreview) ShowPreview(image, path, areaOnScreen, hdrCopy: hdr is not null);
+            if (hdr is not null) await SaveHdrCopies(hdr, path);
         }
         catch (Exception ex)
         {
@@ -170,13 +175,34 @@ internal sealed class TrayApp : ApplicationContext
             cropped?.Dispose();
             shot?.Dispose();
             _busy = false;
+            // A 4K capture briefly needs a few hundred MB; hand it back now rather than sitting on it in the tray.
+            GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+            GC.Collect();
         }
     }
 
-    private void ShowPreview(Bitmap image, string path, Rectangle monitorBounds)
+    private async Task SaveHdrCopies(HdrFrame hdr, string pngPath)
+    {
+        var stem = pngPath[..^".png".Length];
+        var failures = new List<string>();
+        if (_settings.SaveHdrJxr)
+        {
+            try { await Task.Run(() => HdrWriters.WriteJxr(hdr, stem + ".jxr")); }
+            catch (Exception ex) { Log.Write($"JXR save failed: {ex}"); failures.Add(".jxr"); }
+        }
+        if (_settings.SaveHdrPng)
+        {
+            try { await Task.Run(() => HdrWriters.WritePqPng(hdr, stem + " HDR.png")); }
+            catch (Exception ex) { Log.Write($"HDR PNG save failed: {ex}"); failures.Add("HDR PNG"); }
+        }
+        if (failures.Count > 0)
+            _tray.ShowBalloonTip(5000, "HDR copy not saved", $"The normal screenshot is fine, but the {string.Join(" and ", failures)} copy couldn't be saved.", ToolTipIcon.Warning);
+    }
+
+    private void ShowPreview(Bitmap image, string path, Rectangle monitorBounds, bool hdrCopy)
     {
         _toast?.Close();
-        _toast = new PreviewToast(image, path, monitorBounds);
+        _toast = new PreviewToast(image, path, monitorBounds, hdrCopy);
         _toast.FormClosed += (sender, _) =>
         {
             if (ReferenceEquals(_toast, sender)) _toast = null;
