@@ -62,6 +62,15 @@ public class LiveCaptureTests
         Assert.True(diff / n < 6, $"tone-mapped output differs from Windows by {diff / n:0.00} levels on average");
     }
 
+    /// <summary>Read-only: connects to Windows' media controls and lists what's playing. Pauses nothing.</summary>
+    [Fact]
+    public async Task Can_read_windows_media_sessions()
+    {
+        if (Environment.GetEnvironmentVariable("CLEARSHOT_LIVE") != "1") return;
+        var playing = await MediaPauser.PlayingAppsAsync();
+        Console.WriteLine($"LIVE: media playing now: {(playing.Count == 0 ? "nothing" : string.Join(", ", playing))}");
+    }
+
     [DllImport("user32.dll")]
     private static extern bool SetProcessDpiAwarenessContext(IntPtr value);
 }

@@ -11,6 +11,7 @@ public class SettingsTests
         Assert.Equal("Ctrl+PrintScreen", s.RegionHotkey);
         Assert.True(s.PlaySound);
         Assert.True(s.ShowPreview);
+        Assert.True(s.PauseMediaWhileSelecting);
         Assert.False(string.IsNullOrWhiteSpace(s.SaveFolder));
     }
 
@@ -33,11 +34,13 @@ public class SettingsTests
             s.SaveFolder = @"D:\Shots";
             s.RegionHotkey = "Ctrl+Shift+S";
             s.PlaySound = false;
+            s.PauseMediaWhileSelecting = false;
             s.Save(path);
             var loaded = Settings.Load(path);
             Assert.Equal(@"D:\Shots", loaded.SaveFolder);
             Assert.Equal("Ctrl+Shift+S", loaded.RegionHotkey);
             Assert.False(loaded.PlaySound);
+            Assert.False(loaded.PauseMediaWhileSelecting);
         }
         finally { File.Delete(path); }
     }

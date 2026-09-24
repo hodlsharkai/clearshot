@@ -18,6 +18,7 @@ internal sealed class Settings
     public string RegionHotkey { get; set; } = "Ctrl+PrintScreen";
     public bool PlaySound { get; set; } = true;
     public bool ShowPreview { get; set; } = true;
+    public bool PauseMediaWhileSelecting { get; set; } = true;
     public bool WelcomeShown { get; set; }
 
     public static Settings Load(string? path = null)

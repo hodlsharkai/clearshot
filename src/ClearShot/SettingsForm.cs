@@ -8,6 +8,7 @@ internal sealed class SettingsForm : Form
     private readonly HotkeyBox _region = new() { Dock = DockStyle.Fill };
     private readonly CheckBox _sound = new() { Text = "Play a shutter sound", AutoSize = true };
     private readonly CheckBox _preview = new() { Text = "Show a small preview after each capture", AutoSize = true };
+    private readonly CheckBox _pauseMedia = new() { Text = "Pause videos and music while picking a region", AutoSize = true };
     private readonly CheckBox _startup = new() { Text = "Start ClearShot with Windows", AutoSize = true };
 
     public SettingsForm(Settings settings)
@@ -31,6 +32,7 @@ internal sealed class SettingsForm : Form
         _region.Value = Parse(settings.RegionHotkey, "Ctrl+PrintScreen");
         _sound.Checked = settings.PlaySound;
         _preview.Checked = settings.ShowPreview;
+        _pauseMedia.Checked = settings.PauseMediaWhileSelecting;
         _startup.Checked = StartupRegistration.IsEnabled;
 
         var browse = new Button { Text = "Change…", AutoSize = true };
@@ -50,6 +52,7 @@ internal sealed class SettingsForm : Form
         AddWide(grid, new Label { Text = "Click a shortcut box, then press the keys you want.", AutoSize = true, ForeColor = SystemColors.GrayText, Margin = new Padding(3, 0, 3, 10) });
         AddWide(grid, _sound);
         AddWide(grid, _preview);
+        AddWide(grid, _pauseMedia);
         AddWide(grid, _startup);
 
         var about = new Label
@@ -127,6 +130,7 @@ internal sealed class SettingsForm : Form
         _settings.RegionHotkey = _region.Value.ToString();
         _settings.PlaySound = _sound.Checked;
         _settings.ShowPreview = _preview.Checked;
+        _settings.PauseMediaWhileSelecting = _pauseMedia.Checked;
         try
         {
             StartupRegistration.Set(_startup.Checked);

@@ -44,6 +44,7 @@ internal sealed class TrayApp : ApplicationContext
 
         _hotkeys.Pressed += async id => await Capture(region: id == RegionId);
         Task.Run(ScreenCapturer.WarmUp);
+        _ = MediaPauser.WarmUpAsync();
         RegisterHotkeys(announceProblems: true);
 
         if (!_settings.WelcomeShown)
@@ -120,9 +121,20 @@ internal sealed class TrayApp : ApplicationContext
 
             if (region)
             {
-                using var selector = new RegionSelector(shot.Image, shot.Bounds);
-                if (selector.ShowDialog() != DialogResult.OK) return;
-                cropped = shot.Image.Clone(selector.Selection, PixelFormat.Format32bppArgb);
+                // Pause in parallel with showing the overlay so the box appears without delay.
+                var pausing = _settings.PauseMediaWhileSelecting ? MediaPauser.PausePlayingAsync() : null;
+                Rectangle? selection;
+                try
+                {
+                    using var selector = new RegionSelector(shot.Image, shot.Bounds);
+                    selection = selector.ShowDialog() == DialogResult.OK ? selector.Selection : null;
+                }
+                finally
+                {
+                    if (pausing is not null) _ = MediaPauser.ResumeAsync(await pausing);
+                }
+                if (selection is null) return;
+                cropped = shot.Image.Clone(selection.Value, PixelFormat.Format32bppArgb);
                 image = cropped;
             }
 
