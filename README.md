@@ -34,7 +34,7 @@ The normal PNG is still what gets copied to the clipboard, because most apps can
 
 ## Download
 
-**[Download the latest ClearShot.exe](https://github.com/rafflerobot/ClearShot/releases/latest)** and run it. No installer and no admin rights needed.
+**[Download the latest ClearShot.exe](https://github.com/hodlsharkai/ClearShot/releases/latest)** and run it. No installer and no admin rights needed.
 
 Windows may say it "protected your PC" because the app isn't code-signed yet. Click **More info**, then **Run anyway**.
 

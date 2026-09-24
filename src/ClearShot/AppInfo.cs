@@ -21,7 +21,7 @@ internal static class AppInfo
     ];
 
     public static IReadOnlyList<DonationAddress> ActiveDonations => Donations.Where(d => !string.IsNullOrWhiteSpace(d.Address)).ToArray();
-    public const string RepoUrl = "https://github.com/rafflerobot/ClearShot";
+    public const string RepoUrl = "https://github.com/hodlsharkai/ClearShot";
 
     public static void OpenUrl(string url)
     {
