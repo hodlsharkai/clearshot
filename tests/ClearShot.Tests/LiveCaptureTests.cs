@@ -32,7 +32,8 @@ public class LiveCaptureTests
 
     /// <summary>
     /// On an HDR desktop, compares our tone-mapped capture with Windows' own SDR conversion (GDI).
-    /// Desktop content is SDR, so the two should nearly match; a big gap means washed-out or crushed output.
+    /// Only pixels drawn at Windows' normal SDR white are compared: some apps (Chromium-based ones such as
+    /// Brave and Discord) show up in the HDR data at 80-nit white, and GDI brightens those back up.
     /// </summary>
     [Fact]
     public void Hdr_tone_mapping_matches_windows_sdr_rendering()
@@ -42,24 +43,28 @@ public class LiveCaptureTests
         var primary = Screen.PrimaryScreen!.Bounds;
         var point = new Point(primary.X + 10, primary.Y + 10);
 
-        using var ours = ScreenCapturer.CaptureMonitorAt(point);
-        if (!ours.WasHdr) { Console.WriteLine("LIVE: desktop is SDR, HDR comparison skipped"); return; }
+        using var ours = ScreenCapturer.CaptureMonitorAt(point, keepHdr: true);
+        if (ours.Hdr is not { } hdr) { Console.WriteLine("LIVE: desktop is SDR, HDR comparison skipped"); return; }
         using var windows = ScreenCapturer.CaptureWithGdi(ScreenCapturer.MonitorFromPoint(point, 2));
+        float sdrWhiteNits = DisplayInfo.SdrWhiteScRgb(Screen.PrimaryScreen.DeviceName) * 80f;
 
-        double diff = 0, oursLum = 0, winLum = 0;
+        double diff = 0;
         int n = 0;
-        for (int y = 0; y < ours.Image.Height; y += 7)
-        for (int x = 0; x < ours.Image.Width; x += 7)
+        for (int y = 0; y < hdr.Height; y += 7)
+        for (int x = 0; x < hdr.Width; x += 7)
         {
-            var a = ours.Image.GetPixel(x, y);
             var b = windows.Image.GetPixel(x, y);
+            if (b.G < 60 || b.G > 240) continue;
+            double linear = Math.Pow((b.G / 255.0 + 0.055) / 1.055, 2.4);
+            double white = (float)hdr.Pixels[(y * hdr.Width + x) * 4 + 1] * 80.0 / linear;
+            if (Math.Abs(white / sdrWhiteNits - 1) > 0.15) continue;
+            var a = ours.Image.GetPixel(x, y);
             diff += Math.Abs(a.R - b.R) + Math.Abs(a.G - b.G) + Math.Abs(a.B - b.B);
-            oursLum += a.R + a.G + a.B;
-            winLum += b.R + b.G + b.B;
             n += 3;
         }
-        Console.WriteLine($"LIVE: HDR vs Windows SDR: mean abs diff {diff / n:0.00} levels, mean level ours {oursLum / n:0.0} vs Windows {winLum / n:0.0}");
-        Assert.True(diff / n < 6, $"tone-mapped output differs from Windows by {diff / n:0.00} levels on average");
+        if (n == 0) { Console.WriteLine("LIVE: no comparable pixels on screen"); return; }
+        Console.WriteLine($"LIVE: HDR vs Windows SDR on {n / 3} normal-white pixels: mean abs diff {diff / n:0.00} levels");
+        Assert.True(diff / n < 3, $"tone-mapped output differs from Windows by {diff / n:0.00} levels on average");
     }
 
     [Fact]
@@ -87,6 +92,112 @@ public class LiveCaptureTests
             Assert.True(jxrMb > 0.1 && pngMb > 0.1);
         }
         finally { Directory.Delete(dir, true); }
+    }
+
+    /// <summary>
+    /// Saves both HDR formats from the real screen, reads them back, and checks the brightness in the files
+    /// matches what was captured (in nits), so the files hold real HDR data rather than just being valid files.
+    /// </summary>
+    [Fact]
+    public void Hdr_files_read_back_with_the_captured_brightness()
+    {
+        if (Environment.GetEnvironmentVariable("CLEARSHOT_LIVE") != "1") return;
+        SetProcessDpiAwarenessContext(new IntPtr(-4));
+        var primary = Screen.PrimaryScreen!.Bounds;
+        using var shot = ScreenCapturer.CaptureMonitorAt(new Point(primary.X + 10, primary.Y + 10), keepHdr: true);
+        if (shot.Hdr is not { } hdr) { Console.WriteLine("LIVE: desktop is SDR, skipped"); return; }
+
+        var dir = Directory.CreateTempSubdirectory().FullName;
+        try
+        {
+            // JPEG XR: decode with Windows' own codec and compare scRGB values (as nits).
+            var jxrPath = Path.Combine(dir, "a.jxr");
+            HdrWriters.WriteJxr(hdr, jxrPath);
+            var jxr = DecodeJxr(jxrPath, hdr.Width, hdr.Height);
+            var (jxrErr, jxrPeak) = CompareNits(hdr, i => (float)jxr[i] * 80f);
+            Console.WriteLine($"LIVE: jxr mean error {jxrErr:0.00} nits (brightest pixel captured: {jxrPeak:0} nits)");
+            Assert.True(jxrErr < 2.0, $"jxr brightness off by {jxrErr:0.00} nits on average");
+
+            // HDR PNG: undo the PQ curve and the Rec.2020 conversion, compare nits.
+            var pngPath = Path.Combine(dir, "a.png");
+            HdrWriters.WritePqPng(hdr, pngPath);
+            var pngNits = DecodePqPngToRec709Nits(pngPath, hdr.Width, hdr.Height);
+            var (pngErr, _) = CompareNits(hdr, i => pngNits[i]);
+            Console.WriteLine($"LIVE: HDR png mean error {pngErr:0.00} nits");
+            Assert.True(pngErr < 1.0, $"HDR png brightness off by {pngErr:0.00} nits on average");
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    private static (double MeanError, double Peak) CompareNits(HdrFrame hdr, Func<int, float> decodedNits)
+    {
+        double err = 0, peak = 0;
+        long n = 0;
+        for (int y = 0; y < hdr.Height; y += 5)
+        for (int x = 0; x < hdr.Width; x += 5)
+        for (int c = 0; c < 3; c++)
+        {
+            int i = (y * hdr.Width + x) * 4 + c;
+            double original = Math.Max(0, (float)hdr.Pixels[i]) * 80.0;
+            peak = Math.Max(peak, original);
+            err += Math.Abs(decodedNits(i) - original);
+            n++;
+        }
+        return (err / n, peak);
+    }
+
+    private static Half[] DecodeJxr(string path, int width, int height)
+    {
+        using var factory = new Vortice.WIC.IWICImagingFactory();
+        using var decoder = factory.CreateDecoderFromFileName(path);
+        using var frame = decoder.GetFrame(0);
+        using var converter = factory.CreateFormatConverter();
+        converter.Initialize(frame, Vortice.WIC.PixelFormat.Format64bppRGBAHalf, Vortice.WIC.BitmapDitherType.None, null, 0, Vortice.WIC.BitmapPaletteType.Custom);
+        var bytes = new byte[width * height * 8];
+        converter.CopyPixels((uint)(width * 8), bytes);
+        return System.Runtime.InteropServices.MemoryMarshal.Cast<byte, Half>(bytes).ToArray();
+    }
+
+    private static float[] DecodePqPngToRec709Nits(string path, int width, int height)
+    {
+        var png = File.ReadAllBytes(path);
+        using var idat = new MemoryStream();
+        for (int pos = 8; pos < png.Length;)
+        {
+            int len = System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(pos));
+            if (System.Text.Encoding.ASCII.GetString(png, pos + 4, 4) == "IDAT") idat.Write(png, pos + 8, len);
+            pos += 12 + len;
+        }
+        idat.Position = 0;
+        using var zlib = new System.IO.Compression.ZLibStream(idat, System.IO.Compression.CompressionMode.Decompress);
+        int rowBytes = width * 6;
+        var prev = new byte[rowBytes];
+        var row = new byte[rowBytes + 1];
+        var nits = new float[width * height * 4];
+        for (int y = 0; y < height; y++)
+        {
+            zlib.ReadExactly(row);
+            for (int i = 0; i < rowBytes; i++) prev[i] = (byte)(row[i + 1] + (row[0] == 2 ? prev[i] : 0));
+            for (int x = 0; x < width; x++)
+            {
+                double r = PqToNits(prev, x * 6), g = PqToNits(prev, x * 6 + 2), b = PqToNits(prev, x * 6 + 4);
+                // Rec.2020 back to Rec.709.
+                int o = (y * width + x) * 4;
+                nits[o] = (float)(1.6604910 * r - 0.5876411 * g - 0.0728499 * b);
+                nits[o + 1] = (float)(-0.1245505 * r + 1.1328999 * g - 0.0083494 * b);
+                nits[o + 2] = (float)(-0.0181508 * r - 0.1005789 * g + 1.1187297 * b);
+            }
+        }
+        return nits;
+    }
+
+    private static double PqToNits(byte[] row, int offset)
+    {
+        const double m1 = 2610.0 / 16384, m2 = 2523.0 / 4096 * 128;
+        const double c1 = 3424.0 / 4096, c2 = 2413.0 / 4096 * 32, c3 = 2392.0 / 4096 * 32;
+        double e = System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(row.AsSpan(offset)) / 65535.0;
+        double p = Math.Pow(e, 1 / m2);
+        return 10000 * Math.Pow(Math.Max(p - c1, 0) / (c2 - c3 * p), 1 / m1);
     }
 
     /// <summary>Read-only: connects to Windows' media controls and lists what's playing. Pauses nothing.</summary>

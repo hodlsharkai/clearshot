@@ -98,26 +98,28 @@ internal static class ScreenCapturer
         var bounds = Rectangle.FromLTRB(desc.DesktopCoordinates.Left, desc.DesktopCoordinates.Top,
             desc.DesktopCoordinates.Right, desc.DesktopCoordinates.Bottom);
 
-        D3D11.D3D11CreateDevice(adapter, DriverType.Unknown, DeviceCreationFlags.BgraSupport, FeatureLevels,
-            out ID3D11Device? device, out ID3D11DeviceContext? context).CheckError();
-        using (device)
-        using (context)
-        using (var duplication = output6.DuplicateOutput1(device!, (uint)SupportedFormats.Length, SupportedFormats))
+        var (device, context) = DeviceFor(adapter);
+        using (var duplication = output6.DuplicateOutput1(device, (uint)SupportedFormats.Length, SupportedFormats))
         {
             Bitmap? image = null;
             HdrFrame? hdrFrame = null;
-            // The first frame is normally the whole desktop straight away, but some drivers sometimes hand back
-            // an empty first frame. Skip any frame with no desktop image and wait briefly for the next one.
-            // A game presents constantly so the wait is short; a completely still desktop may never send
-            // another frame, and then the GDI fallback (fine for a still, SDR desktop) takes over.
-            for (int attempt = 0; attempt < 4 && image is null; attempt++)
+            // The first frame should hold the whole desktop, but some drivers hand back an all-black first frame
+            // and only send a real one once something on screen changes. Games redraw constantly; a still desktop
+            // doesn't, so if the first frame is no good, briefly show an invisible 1-pixel window to make Windows
+            // compose a fresh frame.
+            var poke = IntPtr.Zero;
+            try
             {
+            for (int attempt = 0; attempt < 5 && image is null; attempt++)
+            {
+                if (attempt == 1) poke = ShowPokeWindow(bounds);
                 var hr = duplication.AcquireNextFrame(attempt == 0 ? 500u : 150u, out var frame, out var resource);
                 if (hr == Vortice.DXGI.ResultCode.WaitTimeout) continue;
                 hr.CheckError();
                 try
                 {
-                    if (frame.LastPresentTime == 0) continue;
+                    // After the first frame, a zero present time means only the mouse moved: nothing new to read.
+                    if (attempt > 0 && frame.LastPresentTime == 0) continue;
                     using (resource)
                     using (var texture = resource!.QueryInterface<ID3D11Texture2D>())
                         (image, hdrFrame) = ReadTexture(device, context, texture, desc.DeviceName, keepHdr);
@@ -132,6 +134,11 @@ internal static class ScreenCapturer
                     image = null;
                     hdrFrame = null;
                 }
+            }
+            }
+            finally
+            {
+                if (poke != IntPtr.Zero) DestroyWindow(poke);
             }
 
             if (image is null) throw new TimeoutException("No desktop frame arrived.");
@@ -332,6 +339,32 @@ internal static class ScreenCapturer
             g.CopyFromScreen(bounds.Location, Point.Empty, bounds.Size, CopyPixelOperation.SourceCopy);
         return new CaptureResult(bitmap, bounds, WasHdr: false, UsedFallback: true);
     }
+
+    private static IntPtr ShowPokeWindow(Rectangle bounds)
+    {
+        const uint wsPopup = 0x80000000;
+        const uint exLayered = 0x80000, exTransparent = 0x20, exToolWindow = 0x80, exNoActivate = 0x08000000, exTopmost = 0x8;
+        var hwnd = CreateWindowEx(exLayered | exTransparent | exToolWindow | exNoActivate | exTopmost, "STATIC", "", wsPopup,
+            bounds.Right - 1, bounds.Bottom - 1, 1, 1, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+        if (hwnd == IntPtr.Zero) return IntPtr.Zero;
+        // Alpha 1 of 255: changes at most one level of one corner pixel, so it never shows in the screenshot.
+        SetLayeredWindowAttributes(hwnd, 0, 1, 0x2);
+        ShowWindow(hwnd, 4 /* SW_SHOWNOACTIVATE */);
+        return hwnd;
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr CreateWindowEx(uint exStyle, string className, string windowName, uint style,
+        int x, int y, int width, int height, IntPtr parent, IntPtr menu, IntPtr instance, IntPtr param);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint colorKey, byte alpha, uint flags);
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hwnd, int command);
+
+    [DllImport("user32.dll")]
+    private static extern bool DestroyWindow(IntPtr hwnd);
 
     private const uint MonitorDefaultToNearest = 2;
 
