@@ -212,7 +212,9 @@ internal sealed class TrayApp : ApplicationContext
         _toast.Show();
     }
 
-    private void ShowWindow()
+    private void ShowWindow() => ShowWindow(draft: null, location: null);
+
+    private void ShowWindow(SettingsForm.Draft? draft, Point? location)
     {
         if (_settingsForm is not null)
         {
@@ -220,7 +222,25 @@ internal sealed class TrayApp : ApplicationContext
             _settingsForm.Activate();
             return;
         }
-        _settingsForm = new SettingsForm(_settings);
+        _settingsForm = new SettingsForm(_settings, draft);
+        if (location is Point at)
+        {
+            _settingsForm.StartPosition = FormStartPosition.Manual;
+            _settingsForm.Location = at;
+        }
+        // A new appearance applies straight away and is saved; controls only pick up a theme when they're
+        // created, so the window is rebuilt in place, keeping anything else changed but not yet saved.
+        _settingsForm.ThemePicked += theme => _uiThread.BeginInvoke(() =>
+        {
+            if (_settingsForm is not { } open) return;
+            var keep = open.CaptureDraft();
+            var where = open.Location;
+            _settings.Theme = theme;
+            TrySaveSettings();
+            Theme.Apply(theme);
+            open.Close();
+            ShowWindow(keep, where);
+        });
         // While a shortcut box is recording, pressing a shortcut should record it, not take a screenshot.
         _settingsForm.RecordingShortcut += recording =>
         {

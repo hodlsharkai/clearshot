@@ -19,7 +19,14 @@ internal sealed class SettingsForm : Form
     /// <summary>True while a shortcut box is waiting for keys, so the real shortcuts should be switched off.</summary>
     public event Action<bool>? RecordingShortcut;
 
-    public SettingsForm(Settings settings)
+    /// <summary>Raised the moment a different appearance is picked, with its value ("System", "Light" or "Dark").</summary>
+    public event Action<string>? ThemePicked;
+
+    /// <summary>What's currently in the window, saved or not, so it can be carried over when the window is rebuilt.</summary>
+    internal sealed record Draft(Settings Values, bool StartWithWindows);
+
+    /// <param name="draft">Unsaved values to show instead of the saved ones (used when switching appearance).</param>
+    public SettingsForm(Settings settings, Draft? draft = null)
     {
         _settings = settings;
         Text = AppInfo.Name;
@@ -35,17 +42,19 @@ internal sealed class SettingsForm : Form
         AutoSizeMode = AutoSizeMode.GrowAndShrink;
         Padding = new Padding(20, 16, 20, 16);
 
-        _folder.Text = settings.SaveFolder;
-        _fullScreen.Value = Parse(settings.FullScreenHotkey, "Alt+C");
-        _region.Value = Parse(settings.RegionHotkey, "Alt+Shift+C");
-        _sound.Checked = settings.PlaySound;
-        _preview.Checked = settings.ShowPreview;
-        _pauseMedia.Checked = settings.PauseMediaWhileSelecting;
-        _hdrJxr.Checked = settings.SaveHdrJxr;
-        _hdrPng.Checked = settings.SaveHdrPng;
-        _startup.Checked = StartupRegistration.IsEnabled;
+        var shown = draft?.Values ?? settings;
+        _folder.Text = shown.SaveFolder;
+        _fullScreen.Value = Parse(shown.FullScreenHotkey, "Alt+C");
+        _region.Value = Parse(shown.RegionHotkey, "Alt+Shift+C");
+        _sound.Checked = shown.PlaySound;
+        _preview.Checked = shown.ShowPreview;
+        _pauseMedia.Checked = shown.PauseMediaWhileSelecting;
+        _hdrJxr.Checked = shown.SaveHdrJxr;
+        _hdrPng.Checked = shown.SaveHdrPng;
+        _startup.Checked = draft?.StartWithWindows ?? StartupRegistration.IsEnabled;
         _theme.Items.AddRange(Theme.Choices.Select(c => c.Label).ToArray());
         _theme.SelectedIndex = Math.Max(0, Array.FindIndex(Theme.Choices, c => c.Value == settings.Theme));
+        _theme.SelectedIndexChanged += (_, _) => ThemePicked?.Invoke(SelectedTheme);
         foreach (var box in new[] { _fullScreen, _region })
         {
             box.Enter += (_, _) => RecordingShortcut?.Invoke(true);
@@ -135,6 +144,21 @@ internal sealed class SettingsForm : Form
         ActiveControl = _closeButton;
     }
 
+    private string SelectedTheme => Theme.Choices[Math.Max(0, _theme.SelectedIndex)].Value;
+
+    public Draft CaptureDraft() => new(new Settings
+    {
+        SaveFolder = _folder.Text,
+        FullScreenHotkey = _fullScreen.Value.ToString(),
+        RegionHotkey = _region.Value.ToString(),
+        PlaySound = _sound.Checked,
+        ShowPreview = _preview.Checked,
+        PauseMediaWhileSelecting = _pauseMedia.Checked,
+        SaveHdrJxr = _hdrJxr.Checked,
+        SaveHdrPng = _hdrPng.Checked,
+        Theme = SelectedTheme,
+    }, _startup.Checked);
+
     private Control Header()
     {
         var panel = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 6) };
@@ -219,7 +243,7 @@ internal sealed class SettingsForm : Form
         _settings.PauseMediaWhileSelecting = _pauseMedia.Checked;
         _settings.SaveHdrJxr = _hdrJxr.Checked;
         _settings.SaveHdrPng = _hdrPng.Checked;
-        _settings.Theme = Theme.Choices[Math.Max(0, _theme.SelectedIndex)].Value;
+        _settings.Theme = SelectedTheme;
         try
         {
             StartupRegistration.Set(_startup.Checked);
