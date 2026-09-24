@@ -99,7 +99,7 @@ internal sealed class TrayApp : ApplicationContext
 
     private void Register(int id, string text, ToolStripMenuItem item, List<string> failed)
     {
-        if (!Hotkey.TryParse(text, out var hotkey))
+        if (!Hotkey.TryParse(text, out var hotkey) || !hotkey.IsSafeAsGlobalShortcut)
         {
             failed.Add($"\"{text}\"");
             item.ShortcutKeyDisplayString = "";
