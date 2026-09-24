@@ -28,8 +28,8 @@ internal sealed class SettingsForm : Form
         Padding = new Padding(16);
 
         _folder.Text = settings.SaveFolder;
-        _fullScreen.Value = Parse(settings.FullScreenHotkey, "PrintScreen");
-        _region.Value = Parse(settings.RegionHotkey, "Ctrl+PrintScreen");
+        _fullScreen.Value = Parse(settings.FullScreenHotkey, "Alt+C");
+        _region.Value = Parse(settings.RegionHotkey, "Alt+Shift+C");
         _sound.Checked = settings.PlaySound;
         _preview.Checked = settings.ShowPreview;
         _pauseMedia.Checked = settings.PauseMediaWhileSelecting;

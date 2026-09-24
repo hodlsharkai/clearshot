@@ -7,8 +7,8 @@ public class SettingsTests
     {
         var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".json");
         var s = Settings.Load(path);
-        Assert.Equal("PrintScreen", s.FullScreenHotkey);
-        Assert.Equal("Ctrl+PrintScreen", s.RegionHotkey);
+        Assert.Equal("Alt+C", s.FullScreenHotkey);
+        Assert.Equal("Alt+Shift+C", s.RegionHotkey);
         Assert.True(s.PlaySound);
         Assert.True(s.ShowPreview);
         Assert.True(s.PauseMediaWhileSelecting);
@@ -20,7 +20,7 @@ public class SettingsTests
     {
         var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".json");
         File.WriteAllText(path, "{ not json");
-        try { Assert.Equal("PrintScreen", Settings.Load(path).FullScreenHotkey); }
+        try { Assert.Equal("Alt+C", Settings.Load(path).FullScreenHotkey); }
         finally { File.Delete(path); }
     }
 

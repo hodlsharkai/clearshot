@@ -5,8 +5,8 @@ A fast, private screenshot tool for Windows that beats Gyazo on trust: no accoun
 
 ## Version 1 scope
 - Two global shortcuts, each with one job (both rebindable):
-  - Full screen (default Print Screen): captures the monitor under the mouse at native resolution, instantly.
-  - Region (default Ctrl + Print Screen): freezes that monitor and shows a drag box; Esc or right-click cancels.
+  - Full screen (default Alt + C; Print Screen was dropped because Windows 11 often reserves it): captures the monitor under the mouse at native resolution, instantly.
+  - Region (default Alt + Shift + C): freezes that monitor and shows a drag box; Esc or right-click cancels.
 - Works in games: capture uses the DXGI Desktop Duplication API (the same OS path as OBS and Game Bar). Nothing is injected into the game process.
 - HDR: when the monitor is in HDR, the frame is captured as FP16 scRGB and tone-mapped to an SDR PNG that looks right anywhere it is pasted.
 - After every capture: copied to the clipboard, saved as PNG in the chosen folder, a short shutter sound (optional), and a small no-focus preview in the corner (optional; click opens the file).

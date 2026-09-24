@@ -23,6 +23,7 @@ public class HotkeyTests
     [InlineData("Ctrl+PrintScreen")]
     [InlineData("Ctrl+Alt+Shift+Win+F9")]
     [InlineData("PrintScreen")]
+    [InlineData("Alt+Shift+C")]
     public void Round_trips(string text)
     {
         Assert.True(Hotkey.TryParse(text, out var hk));

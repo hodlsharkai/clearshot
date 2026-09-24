@@ -12,16 +12,16 @@ A fast, private screenshot tool for Windows.
 
 | Shortcut | What it does |
 |---|---|
-| Print Screen | Captures the whole monitor your mouse is on |
-| Ctrl + Print Screen | Freezes the screen so you can drag a box around the part you want. Esc or right-click cancels. |
+| Alt + C | Captures the whole monitor your mouse is on |
+| Alt + Shift + C | Freezes the screen so you can drag a box around the part you want. Esc or right-click cancels. |
 
 Change either one in **Settings** (right-click the tray icon).
 
 Every capture is copied to the clipboard and saved as a PNG in `Pictures\ClearShot` (you can pick another folder).
 
-### Print Screen doesn't work?
+### Want to use Print Screen?
 
-Windows 11 can keep Print Screen for its own Snipping Tool. Turn off **Settings > Accessibility > Keyboard > Use the Print screen key to open screen capture**, then restart ClearShot. ClearShot tells you if this happens.
+Set it in Settings. Windows 11 may keep Print Screen for its own Snipping Tool; if so, ClearShot tells you and offers to open **Settings > Accessibility > Keyboard > Use the Print screen key to open screen capture** so you can turn it off.
 
 ## Install
 

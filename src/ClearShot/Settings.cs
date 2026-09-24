@@ -14,8 +14,8 @@ internal sealed class Settings
     public string SaveFolder { get; set; } =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "ClearShot");
 
-    public string FullScreenHotkey { get; set; } = "PrintScreen";
-    public string RegionHotkey { get; set; } = "Ctrl+PrintScreen";
+    public string FullScreenHotkey { get; set; } = "Alt+C";
+    public string RegionHotkey { get; set; } = "Alt+Shift+C";
     public bool PlaySound { get; set; } = true;
     public bool ShowPreview { get; set; } = true;
     public bool PauseMediaWhileSelecting { get; set; } = true;
