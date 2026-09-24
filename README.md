@@ -62,6 +62,16 @@ Set `CLEARSHOT_LIVE=1` to also run the tests that capture the real screen.
 
 Releases are built by GitHub Actions: pushing a tag such as `v1.1.0` builds, tests and publishes `ClearShot.exe` to Releases.
 
+## Buy me a beer
+
+ClearShot is free, with no ads and no accounts. If it's useful to you, a tip keeps it going. Thank you!
+
+| Network | Address |
+|---|---|
+| Solana (SOL, USDC and other Solana tokens) | `TC3YtercaL9u6fVfDCpe6hxW48rzV4zg5DKi1vDjzuM` |
+
+Only send each coin to its matching network. The same addresses, with QR codes, are under **Buy me a beer** in the ClearShot window.
+
 ## Licence
 
 MIT

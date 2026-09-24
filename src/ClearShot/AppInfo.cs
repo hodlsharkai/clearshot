@@ -17,7 +17,7 @@ internal static class AppInfo
     [
         new("Bitcoin", "", "BTC only."),
         new("Ethereum and more", "", "ETH, plus Base, Arbitrum, Optimism, Polygon and BNB Chain, and tokens like USDC and USDT on them."),
-        new("Solana", "", "SOL, plus USDC and other tokens on Solana."),
+        new("Solana", "TC3YtercaL9u6fVfDCpe6hxW48rzV4zg5DKi1vDjzuM", "SOL, plus USDC and other tokens on Solana."),
     ];
 
     public static IReadOnlyList<DonationAddress> ActiveDonations => Donations.Where(d => !string.IsNullOrWhiteSpace(d.Address)).ToArray();
