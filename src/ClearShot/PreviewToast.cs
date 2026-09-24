@@ -11,10 +11,10 @@ internal sealed class PreviewToast : Form
     private readonly string _caption;
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 2600 };
 
-    public PreviewToast(Bitmap image, string path, Rectangle monitorBounds, bool hdrCopy)
+    public PreviewToast(Bitmap image, string path, Rectangle monitorBounds, bool hdrCopy, string? caption = null)
     {
         _path = path;
-        _caption = $"Copied and saved  ·  {image.Width} × {image.Height}" + (hdrCopy ? "  ·  HDR" : "");
+        _caption = caption ?? $"Copied and saved  ·  {image.Width} × {image.Height}" + (hdrCopy ? "  ·  HDR" : "");
         float scale = Dpi.ScaleFor(monitorBounds);
         int maxW = (int)(240 * scale), maxH = (int)(150 * scale), pad = (int)(8 * scale), captionH = (int)(26 * scale);
         float fit = Math.Min((float)maxW / image.Width, (float)maxH / image.Height);
@@ -34,7 +34,8 @@ internal sealed class PreviewToast : Form
         Cursor = Cursors.Hand;
         DoubleBuffered = true;
         Font = new Font("Segoe UI", 12f * scale, FontStyle.Regular, GraphicsUnit.Pixel);
-        var size = new Size(Math.Max(thumbSize.Width, (int)(200 * scale)) + pad * 2, thumbSize.Height + pad * 2 + captionH);
+        int captionW = TextRenderer.MeasureText(_caption, Font).Width + pad * 2;
+        var size = new Size(Math.Max(Math.Max(thumbSize.Width, (int)(200 * scale)), captionW) + pad * 2, thumbSize.Height + pad * 2 + captionH);
         var work = Screen.FromRectangle(monitorBounds).WorkingArea;
         Bounds = new Rectangle(work.Right - size.Width - pad * 2, work.Bottom - size.Height - pad * 2, size.Width, size.Height);
 

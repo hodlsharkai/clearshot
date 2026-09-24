@@ -4,6 +4,7 @@ A fast, private screenshot tool for Windows.
 
 - **No account, no uploads, no tracking.** Your screenshots never leave your PC. There is no ClearShot server, so there is nothing to hack.
 - **One key, done.** Press a shortcut and the screenshot is saved and already on your clipboard, ready to paste.
+- **Instant GIFs.** Drag a box, record, stop: a looping GIF is saved and copied, so pasting into Discord uploads the animation.
 - **True resolution.** 4K stays 4K, even on scaled displays.
 - **Works in games.** Uses the same Windows capture system as OBS and Xbox Game Bar. Nothing is injected into the game.
 - **HDR done right.** HDR screens are tone-mapped so screenshots look the way they did on screen, not washed out. Optional HDR mode also saves true HDR copies.
@@ -13,7 +14,8 @@ A fast, private screenshot tool for Windows.
 | Shortcut | What it does |
 |---|---|
 | Alt + C | Captures the whole monitor your mouse is on |
-| Alt + Shift + C | Freezes the screen so you can drag a box around the part you want. Esc or right-click cancels. |
+| Alt + Shift + C | Drag a box around the part you want, on the live screen. Esc or right-click cancels. |
+| Alt + G | Record a GIF: drag a box, then press Alt + G again (or Esc, or Stop) to finish. Up to 15 seconds. |
 
 Change either one in **Settings** (right-click the tray icon).
 
@@ -77,3 +79,5 @@ Only send each coin to its matching network. The same addresses, with QR codes, 
 ## Licence
 
 MIT
+
+ClearShot uses [ImageSharp](https://github.com/SixLabors/ImageSharp) to write GIFs, licensed to this open-source project under the Apache License 2.0 (Six Labors Split License), plus [Vortice.Windows](https://github.com/amerkoleci/Vortice.Windows) (MIT) and [QRCoder](https://github.com/codebude/QRCoder) (MIT).

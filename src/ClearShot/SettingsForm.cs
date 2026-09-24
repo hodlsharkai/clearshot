@@ -7,6 +7,7 @@ internal sealed class SettingsForm : Form
     private readonly TextBox _folder = new() { ReadOnly = true, Dock = DockStyle.Fill };
     private readonly HotkeyBox _fullScreen = new() { Dock = DockStyle.Fill };
     private readonly HotkeyBox _region = new() { Dock = DockStyle.Fill };
+    private readonly HotkeyBox _gif = new() { Dock = DockStyle.Fill };
     private readonly CheckBox _sound = new() { Text = "Play a shutter sound", AutoSize = true, Margin = CheckMargin };
     private readonly CheckBox _preview = new() { Text = "Show a small preview after each capture", AutoSize = true, Margin = CheckMargin };
     private readonly CheckBox _freeze = new() { Text = "Freeze the screen while picking a region", AutoSize = true, Margin = CheckMargin };
@@ -54,6 +55,7 @@ internal sealed class SettingsForm : Form
         _folder.Text = shown.SaveFolder;
         _fullScreen.Value = Parse(shown.FullScreenHotkey, "Alt+C");
         _region.Value = Parse(shown.RegionHotkey, "Alt+Shift+C");
+        _gif.Value = Parse(shown.GifHotkey, "Alt+G");
         _sound.Checked = shown.PlaySound;
         _preview.Checked = shown.ShowPreview;
         _pauseMedia.Checked = shown.PauseMediaWhileSelecting;
@@ -72,7 +74,7 @@ internal sealed class SettingsForm : Form
             try { StartupRegistration.Set(_startup.Checked); }
             catch (Exception ex) { Log.Write($"Could not change startup setting: {ex.Message}"); }
         };
-        foreach (var box in new[] { _fullScreen, _region })
+        foreach (var box in new[] { _fullScreen, _region, _gif })
         {
             box.Enter += (_, _) => RecordingShortcut?.Invoke(true);
             box.Leave += (_, _) => RecordingShortcut?.Invoke(false);
@@ -94,6 +96,7 @@ internal sealed class SettingsForm : Form
         AddWide(grid, SectionTitle("Shortcuts"));
         AddRow(grid, "Full screen", _fullScreen);
         AddRow(grid, "Pick a region", _region);
+        AddRow(grid, "Record a GIF", _gif);
         AddWide(grid, Hint("Click a box, then press the keys you want. ClearShot works in games too."));
 
         AddWide(grid, SectionTitle("Saving"));
@@ -163,6 +166,7 @@ internal sealed class SettingsForm : Form
         SaveFolder = _folder.Text,
         FullScreenHotkey = _fullScreen.Value.ToString(),
         RegionHotkey = _region.Value.ToString(),
+        GifHotkey = _gif.Value.ToString(),
         PlaySound = _sound.Checked,
         ShowPreview = _preview.Checked,
         PauseMediaWhileSelecting = _pauseMedia.Checked,
@@ -236,11 +240,12 @@ internal sealed class SettingsForm : Form
     /// <summary>Checks and stores what's in the window, then tells ClearShot to save it. Invalid input is undone.</summary>
     internal void ApplyChange()
     {
-        if (_fullScreen.Value == _region.Value)
+        if (_fullScreen.Value == _region.Value || _fullScreen.Value == _gif.Value || _region.Value == _gif.Value)
         {
-            MessageBox.Show(this, "The two shortcuts need to be different.", AppInfo.Name, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, "Each shortcut needs to be different.", AppInfo.Name, MessageBoxButtons.OK, MessageBoxIcon.Information);
             _fullScreen.Value = Parse(_settings.FullScreenHotkey, "Alt+C");
             _region.Value = Parse(_settings.RegionHotkey, "Alt+Shift+C");
+            _gif.Value = Parse(_settings.GifHotkey, "Alt+G");
             return;
         }
         try
@@ -257,6 +262,7 @@ internal sealed class SettingsForm : Form
         _settings.SaveFolder = _folder.Text;
         _settings.FullScreenHotkey = _fullScreen.Value.ToString();
         _settings.RegionHotkey = _region.Value.ToString();
+        _settings.GifHotkey = _gif.Value.ToString();
         _settings.PlaySound = _sound.Checked;
         _settings.ShowPreview = _preview.Checked;
         _settings.PauseMediaWhileSelecting = _pauseMedia.Checked;

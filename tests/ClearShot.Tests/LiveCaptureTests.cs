@@ -6,6 +6,7 @@ namespace ClearShot.Tests;
 /// <summary>
 /// Captures the real screen, so it only runs when CLEARSHOT_LIVE=1 is set. Nothing is saved.
 /// </summary>
+[Collection("Screen")] // screen-capturing tests take turns, as captures do in the app
 public class LiveCaptureTests
 {
     [Fact]

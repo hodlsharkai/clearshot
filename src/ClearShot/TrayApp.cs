@@ -6,7 +6,11 @@ namespace ClearShot;
 
 internal sealed class TrayApp : ApplicationContext
 {
-    private const int FullScreenId = 1, RegionId = 2, EscapeId = 3;
+    private const int FullScreenId = 1, RegionId = 2, EscapeId = 3, GifId = 4;
+    private const int GifFps = 15, GifMaxWidth = 960;
+    private static readonly TimeSpan GifMaxLength = TimeSpan.FromSeconds(15);
+    private const long DiscordFreeLimitBytes = 10 * 1024 * 1024;
+    private CancellationTokenSource? _gifStop;
     private Action? _cancelSelection;
 
     private readonly Settings _settings = Settings.Load();
@@ -15,6 +19,7 @@ internal sealed class TrayApp : ApplicationContext
     private readonly NotifyIcon _tray;
     private readonly ToolStripMenuItem _fullScreenItem = new("Capture full screen");
     private readonly ToolStripMenuItem _regionItem = new("Capture region");
+    private readonly ToolStripMenuItem _gifItem = new("Record a GIF");
     // A hidden control, so signals from other threads (a second copy of ClearShot starting) reach the UI thread.
     private readonly Control _uiThread = new();
     private readonly RegisteredWaitHandle _showWait;
@@ -34,6 +39,7 @@ internal sealed class TrayApp : ApplicationContext
 
         _fullScreenItem.Click += async (_, _) => await FromMenu(region: false);
         _regionItem.Click += async (_, _) => await FromMenu(region: true);
+        _gifItem.Click += async (_, _) => { await Task.Delay(250); await RecordGif(); };
 
         var menu = new ContextMenuStrip();
         var openItem = new ToolStripMenuItem("Open ClearShot", null, (_, _) => ShowWindow()) { Font = new Font(menu.Font, FontStyle.Bold) };
@@ -41,6 +47,7 @@ internal sealed class TrayApp : ApplicationContext
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_fullScreenItem);
         menu.Items.Add(_regionItem);
+        menu.Items.Add(_gifItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Open screenshots folder", null, (_, _) => OpenFolder(_settings.SaveFolder));
         if (AppInfo.ActiveDonations.Count > 0)
@@ -59,7 +66,8 @@ internal sealed class TrayApp : ApplicationContext
 
         _hotkeys.Pressed += async id =>
         {
-            if (id == EscapeId) { _cancelSelection?.Invoke(); return; }
+            if (id == EscapeId) { _cancelSelection?.Invoke(); _gifStop?.Cancel(); return; }
+            if (id == GifId) { await RecordGif(); return; }
             await Capture(region: id == RegionId);
         };
         Task.Run(ScreenCapturer.WarmUp);
@@ -84,6 +92,7 @@ internal sealed class TrayApp : ApplicationContext
         var failed = new List<string>();
         Register(FullScreenId, _settings.FullScreenHotkey, _fullScreenItem, failed);
         Register(RegionId, _settings.RegionHotkey, _regionItem, failed);
+        Register(GifId, _settings.GifHotkey, _gifItem, failed);
         // Only speak up once per problem, not every time the window is opened or a box is clicked.
         var problem = string.Join("|", failed);
         if (problem == _lastAnnouncedProblem) return;
@@ -210,6 +219,90 @@ internal sealed class TrayApp : ApplicationContext
     }
 
     /// <summary>
+    /// Press the GIF shortcut to pick an area and start recording; press it again (or Esc, or Stop) to finish.
+    /// The GIF is saved and copied as a file, so pasting into Discord uploads the animation.
+    /// </summary>
+    private async Task RecordGif()
+    {
+        if (_gifStop is not null) { _gifStop.Cancel(); return; }
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            var cursor = Cursor.Position;
+            var monitor = Screen.FromPoint(cursor).Bounds;
+            Rectangle? chosen;
+            using (var live = new LiveRegionSelector(monitor))
+                chosen = await SelectWithEscape(live.SelectAsync, live.Cancel);
+            if (chosen is not Rectangle box) return;
+            await Task.Run(() => { DwmFlush(); DwmFlush(); });
+
+            var hmonitor = ScreenCapturer.MonitorFromPoint(new Point(monitor.X + monitor.Width / 2, monitor.Y + monitor.Height / 2), 2);
+            var onScreen = box with { X = box.X + monitor.X, Y = box.Y + monitor.Y };
+            _gifStop = new CancellationTokenSource();
+            bool escapeHooked = Hotkey.TryParse("Escape", out var esc) && _hotkeys.Register(EscapeId, esc);
+            Recording recording;
+            using (var overlay = new RecordingOverlay(onScreen, monitor, GifMaxLength))
+            {
+                overlay.StopClicked += () => _gifStop?.Cancel();
+                overlay.Show();
+                try
+                {
+                    recording = await new RegionRecorder(hmonitor, box, GifFps, GifMaxWidth, GifMaxLength).RunAsync(_gifStop.Token);
+                }
+                finally
+                {
+                    if (escapeHooked) _hotkeys.Unregister(EscapeId);
+                    _gifStop.Dispose();
+                    _gifStop = null;
+                }
+            }
+
+            Directory.CreateDirectory(_settings.SaveFolder);
+            var path = FileNamer.UniquePath(_settings.SaveFolder, DateTime.Now, ".gif");
+            await Task.Run(() => GifMaker.Save(recording, path));
+            ClipboardOutput.CopyFile(path);
+            if (_settings.PlaySound) _sound.Play();
+
+            long bytes = new FileInfo(path).Length;
+            var caption = $"GIF copied and saved  ·  {recording.TotalMs / 1000.0:0.0} s  ·  {bytes / 1048576.0:0.0} MB";
+            if (bytes > DiscordFreeLimitBytes) caption += "  ·  over Discord's 10 MB free limit";
+            if (_settings.ShowPreview)
+            {
+                using var first = FirstFrame(recording);
+                ShowPreview(first, path, monitor, hdrCopy: false, caption);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"GIF recording failed: {ex}");
+            _tray.ShowBalloonTip(5000, "GIF failed", ex.Message, ToolTipIcon.Warning);
+        }
+        finally
+        {
+            _busy = false;
+            GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+            GC.Collect();
+        }
+    }
+
+    private static Bitmap FirstFrame(Recording recording)
+    {
+        var bitmap = new Bitmap(recording.Width, recording.Height, PixelFormat.Format32bppArgb);
+        var data = bitmap.LockBits(new Rectangle(0, 0, recording.Width, recording.Height), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+        try
+        {
+            for (int y = 0; y < recording.Height; y++)
+                System.Runtime.InteropServices.Marshal.Copy(recording.Frames[0].Bgra, y * recording.Width * 4, data.Scan0 + y * data.Stride, recording.Width * 4);
+        }
+        finally
+        {
+            bitmap.UnlockBits(data);
+        }
+        return bitmap;
+    }
+
+    /// <summary>
     /// Runs a region picker. The pickers never take focus, so Esc is caught as a global shortcut while one is up,
     /// and media is paused around it if that option is on.
     /// </summary>
@@ -251,10 +344,10 @@ internal sealed class TrayApp : ApplicationContext
             _tray.ShowBalloonTip(5000, "HDR copy not saved", $"The normal screenshot is fine, but the {string.Join(" and ", failures)} copy couldn't be saved.", ToolTipIcon.Warning);
     }
 
-    private void ShowPreview(Bitmap image, string path, Rectangle monitorBounds, bool hdrCopy)
+    private void ShowPreview(Bitmap image, string path, Rectangle monitorBounds, bool hdrCopy, string? caption = null)
     {
         _toast?.Close();
-        _toast = new PreviewToast(image, path, monitorBounds, hdrCopy);
+        _toast = new PreviewToast(image, path, monitorBounds, hdrCopy, caption);
         _toast.FormClosed += (sender, _) =>
         {
             if (ReferenceEquals(_toast, sender)) _toast = null;

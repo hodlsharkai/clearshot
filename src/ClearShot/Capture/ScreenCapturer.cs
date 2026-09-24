@@ -21,10 +21,10 @@ internal sealed record CaptureResult(Bitmap Image, Rectangle Bounds, bool WasHdr
 /// </summary>
 internal static class ScreenCapturer
 {
-    private static readonly FeatureLevel[] FeatureLevels =
+    internal static readonly FeatureLevel[] FeatureLevels =
         [FeatureLevel.Level_11_1, FeatureLevel.Level_11_0, FeatureLevel.Level_10_1, FeatureLevel.Level_10_0];
 
-    private static readonly Format[] SupportedFormats = [Format.R16G16B16A16_Float, Format.B8G8R8A8_UNorm];
+    internal static readonly Format[] SupportedFormats = [Format.R16G16B16A16_Float, Format.B8G8R8A8_UNorm];
 
     // Creating a Direct3D device takes ~200 ms, so keep one per graphics adapter. Captures never overlap,
     // but the lock keeps the shared device context safe regardless.
@@ -220,7 +220,7 @@ internal static class ScreenCapturer
         }
     }
 
-    private static unsafe Bitmap FromBgra8(IntPtr src, int srcPitch, int width, int height)
+    internal static unsafe Bitmap FromBgra8(IntPtr src, int srcPitch, int width, int height)
     {
         var bitmap = new Bitmap(width, height, PixelFormat.Format32bppArgb);
         var data = bitmap.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
@@ -253,9 +253,17 @@ internal static class ScreenCapturer
         return new HdrFrame(width, height, pixels);
     }
 
-    private static unsafe Bitmap FromScRgb16(IntPtr src, int srcPitch, int width, int height, float sdrWhite)
+    private static Bitmap FromScRgb16(IntPtr src, int srcPitch, int width, int height, float sdrWhite)
     {
-        // Work out how far the highlights go (ignoring a few hot pixels) so the roll-off keeps their detail.
+        float highlightMax = HighlightMax(src, srcPitch, width, height, sdrWhite);
+        var bitmap = ToneMap(src, srcPitch, width, height, new HdrToneMapper(sdrWhite, highlightMax));
+        Log.Write($"HDR capture {width}x{height}, SDR white {sdrWhite * 80:0} nits, highlights up to {highlightMax:0.00}x white");
+        return bitmap;
+    }
+
+    /// <summary>How far the highlights go, relative to SDR white, ignoring a few hot pixels.</summary>
+    internal static unsafe float HighlightMax(IntPtr src, int srcPitch, int width, int height, float sdrWhite)
+    {
         const int step = 4;
         var samples = new List<float>(width / step * (height / step) + 1);
         float invWhite = 1f / sdrWhite;
@@ -268,9 +276,11 @@ internal static class ScreenCapturer
                 samples.Add(HdrToneMapper.Luminance((float)p[0], (float)p[1], (float)p[2]) * invWhite);
             }
         }
-        float highlightMax = MathF.Max(1f, HdrToneMapper.PercentileOf(samples.ToArray(), 0.995));
-        var mapper = new HdrToneMapper(sdrWhite, highlightMax);
+        return MathF.Max(1f, HdrToneMapper.PercentileOf(samples.ToArray(), 0.995));
+    }
 
+    internal static unsafe Bitmap ToneMap(IntPtr src, int srcPitch, int width, int height, HdrToneMapper mapper)
+    {
         var bitmap = new Bitmap(width, height, PixelFormat.Format32bppArgb);
         var data = bitmap.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
         try
@@ -295,11 +305,10 @@ internal static class ScreenCapturer
         {
             bitmap.UnlockBits(data);
         }
-        Log.Write($"HDR capture {width}x{height}, SDR white {sdrWhite * 80:0} nits, highlights up to {highlightMax:0.00}x white");
         return bitmap;
     }
 
-    private static unsafe bool LooksBlank(Bitmap bitmap)
+    internal static unsafe bool LooksBlank(Bitmap bitmap)
     {
         var data = bitmap.LockBits(new Rectangle(0, 0, bitmap.Width, bitmap.Height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
         try
@@ -340,7 +349,7 @@ internal static class ScreenCapturer
         return new CaptureResult(bitmap, bounds, WasHdr: false, UsedFallback: true);
     }
 
-    private static IntPtr ShowPokeWindow(Rectangle bounds)
+    internal static IntPtr ShowPokeWindow(Rectangle bounds)
     {
         const uint wsPopup = 0x80000000;
         const uint exLayered = 0x80000, exTransparent = 0x20, exToolWindow = 0x80, exNoActivate = 0x08000000, exTopmost = 0x8;
@@ -364,7 +373,7 @@ internal static class ScreenCapturer
     private static extern bool ShowWindow(IntPtr hwnd, int command);
 
     [DllImport("user32.dll")]
-    private static extern bool DestroyWindow(IntPtr hwnd);
+    internal static extern bool DestroyWindow(IntPtr hwnd);
 
     private const uint MonitorDefaultToNearest = 2;
 
