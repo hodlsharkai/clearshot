@@ -18,7 +18,7 @@ internal sealed class SettingsForm : Form
 
     // Tick boxes draw from their very edge, while label text has a little built-in padding; shift them
     // right so boxes, headings and labels share one left edge.
-    private static readonly Padding CheckMargin = new(5, 3, 3, 3);
+    private static readonly Padding CheckMargin = new(8, 3, 3, 3);
 
     /// <summary>True while a shortcut box is waiting for keys, so the real shortcuts should be switched off.</summary>
     public event Action<bool>? RecordingShortcut;
