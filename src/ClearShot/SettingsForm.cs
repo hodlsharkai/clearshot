@@ -7,14 +7,18 @@ internal sealed class SettingsForm : Form
     private readonly TextBox _folder = new() { ReadOnly = true, Dock = DockStyle.Fill };
     private readonly HotkeyBox _fullScreen = new() { Dock = DockStyle.Fill };
     private readonly HotkeyBox _region = new() { Dock = DockStyle.Fill };
-    private readonly CheckBox _sound = new() { Text = "Play a shutter sound", AutoSize = true };
-    private readonly CheckBox _preview = new() { Text = "Show a small preview after each capture", AutoSize = true };
-    private readonly CheckBox _pauseMedia = new() { Text = "Pause videos and music while picking a region", AutoSize = true };
-    private readonly CheckBox _hdrJxr = new() { Text = "Save a .jxr copy (opens in HDR in Windows Photos)", AutoSize = true };
-    private readonly CheckBox _hdrPng = new() { Text = "Save an HDR PNG copy (shows in HDR in Chrome and Edge)", AutoSize = true };
-    private readonly CheckBox _startup = new() { Text = "Start ClearShot with Windows", AutoSize = true };
+    private readonly CheckBox _sound = new() { Text = "Play a shutter sound", AutoSize = true, Margin = CheckMargin };
+    private readonly CheckBox _preview = new() { Text = "Show a small preview after each capture", AutoSize = true, Margin = CheckMargin };
+    private readonly CheckBox _pauseMedia = new() { Text = "Pause videos and music while picking a region", AutoSize = true, Margin = CheckMargin };
+    private readonly CheckBox _hdrJxr = new() { Text = "Save a .jxr copy (opens in HDR in Windows Photos)", AutoSize = true, Margin = CheckMargin };
+    private readonly CheckBox _hdrPng = new() { Text = "Save an HDR PNG copy (shows in HDR in Chrome and Edge)", AutoSize = true, Margin = CheckMargin };
+    private readonly CheckBox _startup = new() { Text = "Start ClearShot with Windows", AutoSize = true, Margin = CheckMargin };
     private readonly ComboBox _theme = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 160 };
     private readonly Button _closeButton = new() { Text = "Close", AutoSize = true, MinimumSize = new Size(88, 0), DialogResult = DialogResult.Cancel };
+
+    // Tick boxes draw from their very edge, while label text has a little built-in padding; shift them
+    // right so boxes, headings and labels share one left edge.
+    private static readonly Padding CheckMargin = new(5, 3, 3, 3);
 
     /// <summary>True while a shortcut box is waiting for keys, so the real shortcuts should be switched off.</summary>
     public event Action<bool>? RecordingShortcut;
