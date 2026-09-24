@@ -44,3 +44,36 @@ public class SettingsFormTests
         if (failure is not null) throw failure;
     }
 }
+
+public class SettingsFormAutoSaveTests
+{
+    private static IEnumerable<Control> FindAll(Control root) =>
+        root.Controls.Cast<Control>().SelectMany(c => new[] { c }.Concat(FindAll(c)));
+
+    /// <summary>The bug from 24/09: unticking "Pause videos" did nothing unless Save was pressed.</summary>
+    [Fact]
+    public void Unticking_pause_videos_is_saved_immediately()
+    {
+        Exception? failure = null;
+        var t = new Thread(() =>
+        {
+            try
+            {
+                var settings = new Settings();
+                Assert.True(settings.PauseMediaWhileSelecting);
+                using var form = new SettingsForm(settings);
+                int changes = 0;
+                form.SettingsChanged += () => changes++;
+                var pause = FindAll(form).OfType<CheckBox>().First(c => c.Text.StartsWith("Pause videos"));
+                pause.Checked = false;
+                Assert.False(settings.PauseMediaWhileSelecting);
+                Assert.Equal(1, changes);
+                Assert.DoesNotContain(FindAll(form).OfType<Button>(), b => b.Text == "Save");
+            }
+            catch (Exception ex) { failure = ex; }
+        });
+        t.SetApartmentState(ApartmentState.STA);
+        t.Start(); t.Join();
+        if (failure is not null) throw failure;
+    }
+}

@@ -23,6 +23,9 @@ internal sealed class SettingsForm : Form
     /// <summary>True while a shortcut box is waiting for keys, so the real shortcuts should be switched off.</summary>
     public event Action<bool>? RecordingShortcut;
 
+    /// <summary>Raised whenever a setting changes. Every change is saved straight away; there is no Save button.</summary>
+    public event Action? SettingsChanged;
+
     /// <summary>Raised the moment a different appearance is picked, with its value ("System", "Light" or "Dark").</summary>
     public event Action<string>? ThemePicked;
 
@@ -59,11 +62,23 @@ internal sealed class SettingsForm : Form
         _theme.Items.AddRange(Theme.Choices.Select(c => c.Label).ToArray());
         _theme.SelectedIndex = Math.Max(0, Array.FindIndex(Theme.Choices, c => c.Value == settings.Theme));
         _theme.SelectedIndexChanged += (_, _) => ThemePicked?.Invoke(SelectedTheme);
+        // Wired after the initial values are set, so opening the window doesn't count as a change.
+        foreach (var box in new[] { _sound, _preview, _pauseMedia, _hdrJxr, _hdrPng })
+            box.CheckedChanged += (_, _) => ApplyChange();
+        _startup.CheckedChanged += (_, _) =>
+        {
+            try { StartupRegistration.Set(_startup.Checked); }
+            catch (Exception ex) { Log.Write($"Could not change startup setting: {ex.Message}"); }
+        };
         foreach (var box in new[] { _fullScreen, _region })
         {
             box.Enter += (_, _) => RecordingShortcut?.Invoke(true);
             box.Leave += (_, _) => RecordingShortcut?.Invoke(false);
-            box.Done += (_, _) => ActiveControl = _closeButton;
+            box.Done += (_, _) =>
+            {
+                ApplyChange();
+                ActiveControl = _closeButton;
+            };
         }
 
         var grid = new TableLayoutPanel { ColumnCount = 4, AutoSize = true, Dock = DockStyle.Fill };
@@ -109,20 +124,12 @@ internal sealed class SettingsForm : Form
         };
         AddWide(grid, about);
 
-        var save = new Button { Text = "Save", AutoSize = true, MinimumSize = new Size(88, 0), Anchor = AnchorStyles.Right };
         var close = _closeButton;
-        save.Click += (_, _) =>
-        {
-            if (!Commit()) return;
-            DialogResult = DialogResult.OK;
-            Close();
-        };
         close.Click += (_, _) => Close();
-        // One row: "Buy me a beer" on the left, Save and Close on the right. Every cell sizes to its content,
+        // One row: "Buy me a beer" on the left, Close on the right. Every cell sizes to its content,
         // so nothing can be pushed out of view at any display scaling.
-        var footer = new TableLayoutPanel { ColumnCount = 3, RowCount = 1, AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(0, 10, 0, 0) };
+        var footer = new TableLayoutPanel { ColumnCount = 2, RowCount = 1, AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(0, 10, 0, 0) };
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         footer.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         if (AppInfo.ActiveDonations.Count > 0)
@@ -131,11 +138,9 @@ internal sealed class SettingsForm : Form
             donate.LinkClicked += (_, _) => DonateForm.ShowFor(AppInfo.ActiveDonations, this);
             footer.Controls.Add(donate, 0, 0);
         }
-        footer.Controls.Add(save, 1, 0);
-        footer.Controls.Add(close, 2, 0);
+        footer.Controls.Add(close, 1, 0);
         AddWide(grid, footer);
 
-        AcceptButton = save;
         CancelButton = close;
         Controls.Add(grid);
         Theme.Style(this);
@@ -178,7 +183,7 @@ internal sealed class SettingsForm : Form
         var title = new Label { Text = AppInfo.Name, AutoSize = true, Font = new Font("Segoe UI Semibold", 15f), Margin = new Padding(0, 0, 0, 0) };
         var status = new Label
         {
-            Text = "Running in your system tray. Close this window and it keeps working.",
+            Text = "Changes save as you make them. Close this window and ClearShot keeps running in the tray.",
             AutoSize = true,
             ForeColor = SystemColors.GrayText,
             Margin = new Padding(2, 0, 0, 0),
@@ -219,15 +224,20 @@ internal sealed class SettingsForm : Form
     private void ChooseFolder()
     {
         using var dialog = new FolderBrowserDialog { SelectedPath = _folder.Text, ShowNewFolderButton = true, Description = "Where should screenshots be saved?" };
-        if (dialog.ShowDialog(this) == DialogResult.OK) _folder.Text = dialog.SelectedPath;
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        _folder.Text = dialog.SelectedPath;
+        ApplyChange();
     }
 
-    private bool Commit()
+    /// <summary>Checks and stores what's in the window, then tells ClearShot to save it. Invalid input is undone.</summary>
+    internal void ApplyChange()
     {
         if (_fullScreen.Value == _region.Value)
         {
             MessageBox.Show(this, "The two shortcuts need to be different.", AppInfo.Name, MessageBoxButtons.OK, MessageBoxIcon.Information);
-            return false;
+            _fullScreen.Value = Parse(_settings.FullScreenHotkey, "Alt+C");
+            _region.Value = Parse(_settings.RegionHotkey, "Alt+Shift+C");
+            return;
         }
         try
         {
@@ -236,7 +246,8 @@ internal sealed class SettingsForm : Form
         catch (Exception ex)
         {
             MessageBox.Show(this, $"ClearShot can't save to that folder.\n\n{ex.Message}", AppInfo.Name, MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return false;
+            _folder.Text = _settings.SaveFolder;
+            return;
         }
 
         _settings.SaveFolder = _folder.Text;
@@ -247,15 +258,6 @@ internal sealed class SettingsForm : Form
         _settings.PauseMediaWhileSelecting = _pauseMedia.Checked;
         _settings.SaveHdrJxr = _hdrJxr.Checked;
         _settings.SaveHdrPng = _hdrPng.Checked;
-        _settings.Theme = SelectedTheme;
-        try
-        {
-            StartupRegistration.Set(_startup.Checked);
-        }
-        catch (Exception ex)
-        {
-            Log.Write($"Could not change startup setting: {ex.Message}");
-        }
-        return true;
+        SettingsChanged?.Invoke();
     }
 }

@@ -20,6 +20,7 @@ internal sealed class TrayApp : ApplicationContext
     private PreviewToast? _toast;
     private SettingsForm? _settingsForm;
     private bool _busy;
+    private string _lastAnnouncedProblem = "";
 
     /// <param name="showSignal">Set when ClearShot is started again while already running: open the window.</param>
     /// <param name="openWindow">Open the window now (false when Windows starts ClearShot at sign-in).</param>
@@ -78,6 +79,10 @@ internal sealed class TrayApp : ApplicationContext
         var failed = new List<string>();
         Register(FullScreenId, _settings.FullScreenHotkey, _fullScreenItem, failed);
         Register(RegionId, _settings.RegionHotkey, _regionItem, failed);
+        // Only speak up once per problem, not every time the window is opened or a box is clicked.
+        var problem = string.Join("|", failed);
+        if (problem == _lastAnnouncedProblem) return;
+        _lastAnnouncedProblem = problem;
         if (failed.Count == 0 || !announceProblems) return;
 
         var names = string.Join(" and ", failed);
@@ -228,8 +233,8 @@ internal sealed class TrayApp : ApplicationContext
             _settingsForm.StartPosition = FormStartPosition.Manual;
             _settingsForm.Location = at;
         }
-        // A new appearance applies straight away and is saved; controls only pick up a theme when they're
-        // created, so the window is rebuilt in place, keeping anything else changed but not yet saved.
+        // A new appearance applies straight away; controls only pick up a theme when they're created,
+        // so the window is rebuilt in place.
         _settingsForm.ThemePicked += theme => _uiThread.BeginInvoke(() =>
         {
             if (_settingsForm is not { } open) return;
@@ -241,23 +246,18 @@ internal sealed class TrayApp : ApplicationContext
             open.Close();
             ShowWindow(keep, where);
         });
+        _settingsForm.SettingsChanged += TrySaveSettings;
         // While a shortcut box is recording, pressing a shortcut should record it, not take a screenshot.
         _settingsForm.RecordingShortcut += recording =>
         {
             if (recording) _hotkeys.UnregisterAll();
-            else RegisterHotkeys(announceProblems: false);
+            else RegisterHotkeys(announceProblems: true);
         };
         _settingsForm.FormClosed += (_, _) =>
         {
-            bool saved = _settingsForm.DialogResult == DialogResult.OK;
             _settingsForm.Dispose();
             _settingsForm = null;
-            if (saved)
-            {
-                TrySaveSettings();
-                Theme.Apply(_settings.Theme);
-            }
-            RegisterHotkeys(announceProblems: saved);
+            RegisterHotkeys(announceProblems: true);
         };
         _settingsForm.Show();
         _settingsForm.Activate();
