@@ -40,8 +40,8 @@ internal sealed class TrayApp : ApplicationContext
         menu.Items.Add(_regionItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Open screenshots folder", null, (_, _) => OpenFolder(_settings.SaveFolder));
-        if (!string.IsNullOrEmpty(AppInfo.DonateUrl))
-            menu.Items.Add("Support ClearShot", null, (_, _) => AppInfo.OpenUrl(AppInfo.DonateUrl));
+        if (AppInfo.ActiveDonations.Count > 0)
+            menu.Items.Add("Buy me a beer", null, (_, _) => DonateForm.ShowFor(AppInfo.ActiveDonations));
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Quit", null, (_, _) => ExitThread());
 

@@ -9,8 +9,18 @@ internal static class AppInfo
             .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion ?? "1.0.0")
         .Split('+')[0];
 
-    // Leave empty to hide the menu item.
-    public const string DonateUrl = "";
+    /// <summary>
+    /// "Buy me a beer" addresses. Entries with an empty address are hidden, and with none set
+    /// the donate link doesn't appear at all.
+    /// </summary>
+    public static readonly DonationAddress[] Donations =
+    [
+        new("Bitcoin", "", "BTC only."),
+        new("Ethereum and more", "", "ETH, plus Base, Arbitrum, Optimism, Polygon and BNB Chain, and tokens like USDC and USDT on them."),
+        new("Solana", "", "SOL, plus USDC and other tokens on Solana."),
+    ];
+
+    public static IReadOnlyList<DonationAddress> ActiveDonations => Donations.Where(d => !string.IsNullOrWhiteSpace(d.Address)).ToArray();
     public const string RepoUrl = "https://github.com/rafflerobot/ClearShot";
 
     public static void OpenUrl(string url)
@@ -19,3 +29,5 @@ internal static class AppInfo
         System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
     }
 }
+
+internal sealed record DonationAddress(string Network, string Address, string Accepts);

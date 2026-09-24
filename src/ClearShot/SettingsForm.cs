@@ -104,13 +104,17 @@ internal sealed class SettingsForm : Form
         close.Click += (_, _) => Close();
         buttons.Controls.Add(close);
         buttons.Controls.Add(save);
-        if (!string.IsNullOrEmpty(AppInfo.DonateUrl))
+        var footer = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, Dock = DockStyle.Fill, Margin = Padding.Empty };
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        if (AppInfo.ActiveDonations.Count > 0)
         {
-            var donate = new LinkLabel { Text = "Support ClearShot", AutoSize = true, Margin = new Padding(3, 8, 24, 3) };
-            donate.LinkClicked += (_, _) => AppInfo.OpenUrl(AppInfo.DonateUrl);
-            buttons.Controls.Add(donate);
+            var donate = new LinkLabel { Text = "Buy me a beer", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(3, 14, 3, 3) };
+            donate.LinkClicked += (_, _) => DonateForm.ShowFor(AppInfo.ActiveDonations, this);
+            footer.Controls.Add(donate, 0, 0);
         }
-        AddWide(grid, buttons);
+        footer.Controls.Add(buttons, 1, 0);
+        AddWide(grid, footer);
 
         AcceptButton = save;
         CancelButton = close;
