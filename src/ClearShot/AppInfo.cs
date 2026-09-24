@@ -15,8 +15,8 @@ internal static class AppInfo
     /// </summary>
     public static readonly DonationAddress[] Donations =
     [
-        new("Bitcoin", "", "BTC only."),
-        new("Ethereum and more", "", "ETH, plus Base, Arbitrum, Optimism, Polygon and BNB Chain, and tokens like USDC and USDT on them."),
+        new("Bitcoin", "bc1qqz7xqmkgesmstyj40xadrf3szzfjdr2gx4u86y", "BTC only."),
+        new("Ethereum and more", "0xB78c5D07b6F957168998315E49210074Dc55F179", "ETH, plus Base, Arbitrum, Optimism, Polygon and BNB Chain, and tokens like USDC and USDT on them."),
         new("Solana", "TC3YtercaL9u6fVfDCpe6hxW48rzV4zg5DKi1vDjzuM", "SOL, plus USDC and other tokens on Solana."),
     ];
 

@@ -68,6 +68,8 @@ ClearShot is free, with no ads and no accounts. If it's useful to you, a tip kee
 
 | Network | Address |
 |---|---|
+| Bitcoin (BTC) | `bc1qqz7xqmkgesmstyj40xadrf3szzfjdr2gx4u86y` |
+| Ethereum (ETH, plus Base, Arbitrum, Optimism, Polygon and BNB Chain, and tokens like USDC and USDT on them) | `0xB78c5D07b6F957168998315E49210074Dc55F179` |
 | Solana (SOL, USDC and other Solana tokens) | `TC3YtercaL9u6fVfDCpe6hxW48rzV4zg5DKi1vDjzuM` |
 
 Only send each coin to its matching network. The same addresses, with QR codes, are under **Buy me a beer** in the ClearShot window.
