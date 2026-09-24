@@ -20,6 +20,7 @@ public class SettingsFormTests
                     PlaySound = false,
                     ShowPreview = false,
                     PauseMediaWhileSelecting = false,
+                    FreezeWhileSelecting = true,
                     SaveHdrJxr = true,
                     SaveHdrPng = true,
                 };
@@ -31,6 +32,7 @@ public class SettingsFormTests
                 Assert.False(round.Values.PlaySound);
                 Assert.False(round.Values.ShowPreview);
                 Assert.False(round.Values.PauseMediaWhileSelecting);
+                Assert.True(round.Values.FreezeWhileSelecting);
                 Assert.True(round.Values.SaveHdrJxr);
                 Assert.True(round.Values.SaveHdrPng);
                 Assert.True(round.StartWithWindows);
@@ -59,8 +61,7 @@ public class SettingsFormAutoSaveTests
         {
             try
             {
-                var settings = new Settings();
-                Assert.True(settings.PauseMediaWhileSelecting);
+                var settings = new Settings { PauseMediaWhileSelecting = true };
                 using var form = new SettingsForm(settings);
                 int changes = 0;
                 form.SettingsChanged += () => changes++;

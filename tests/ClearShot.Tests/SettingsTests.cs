@@ -11,7 +11,8 @@ public class SettingsTests
         Assert.Equal("Alt+Shift+C", s.RegionHotkey);
         Assert.True(s.PlaySound);
         Assert.True(s.ShowPreview);
-        Assert.True(s.PauseMediaWhileSelecting);
+        Assert.False(s.PauseMediaWhileSelecting);
+        Assert.False(s.FreezeWhileSelecting);
         Assert.False(string.IsNullOrWhiteSpace(s.SaveFolder));
     }
 
@@ -34,13 +35,15 @@ public class SettingsTests
             s.SaveFolder = @"D:\Shots";
             s.RegionHotkey = "Ctrl+Shift+S";
             s.PlaySound = false;
-            s.PauseMediaWhileSelecting = false;
+            s.PauseMediaWhileSelecting = true;
+            s.FreezeWhileSelecting = true;
             s.Save(path);
             var loaded = Settings.Load(path);
             Assert.Equal(@"D:\Shots", loaded.SaveFolder);
             Assert.Equal("Ctrl+Shift+S", loaded.RegionHotkey);
             Assert.False(loaded.PlaySound);
-            Assert.False(loaded.PauseMediaWhileSelecting);
+            Assert.True(loaded.PauseMediaWhileSelecting);
+            Assert.True(loaded.FreezeWhileSelecting);
         }
         finally { File.Delete(path); }
     }

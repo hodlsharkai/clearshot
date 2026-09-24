@@ -19,7 +19,8 @@ internal sealed class Settings
     public string RegionHotkey { get; set; } = "Alt+Shift+C";
     public bool PlaySound { get; set; } = true;
     public bool ShowPreview { get; set; } = true;
-    public bool PauseMediaWhileSelecting { get; set; } = true;
+    public bool PauseMediaWhileSelecting { get; set; }
+    public bool FreezeWhileSelecting { get; set; }
     public bool SaveHdrJxr { get; set; }
     public bool SaveHdrPng { get; set; }
     public string Theme { get; set; } = "System";

@@ -6,7 +6,8 @@ namespace ClearShot;
 
 internal sealed class TrayApp : ApplicationContext
 {
-    private const int FullScreenId = 1, RegionId = 2;
+    private const int FullScreenId = 1, RegionId = 2, EscapeId = 3;
+    private Action? _cancelSelection;
 
     private readonly Settings _settings = Settings.Load();
     private readonly HotkeyManager _hotkeys = new();
@@ -56,7 +57,11 @@ internal sealed class TrayApp : ApplicationContext
         };
         _tray.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) ShowWindow(); };
 
-        _hotkeys.Pressed += async id => await Capture(region: id == RegionId);
+        _hotkeys.Pressed += async id =>
+        {
+            if (id == EscapeId) { _cancelSelection?.Invoke(); return; }
+            await Capture(region: id == RegionId);
+        };
         Task.Run(ScreenCapturer.WarmUp);
         _ = MediaPauser.WarmUpAsync();
         RegisterHotkeys(announceProblems: true);
@@ -135,29 +140,46 @@ internal sealed class TrayApp : ApplicationContext
         {
             var cursor = Cursor.Position;
             bool wantHdr = _settings.SaveHdrJxr || _settings.SaveHdrPng;
-            shot = await Task.Run(() => ScreenCapturer.CaptureMonitorAt(cursor, wantHdr));
+
+            // Live region (the default): pick the box on the moving screen, then capture once the overlay is gone.
+            Rectangle? liveBox = null;
+            var capturePoint = cursor;
+            if (region && !_settings.FreezeWhileSelecting)
+            {
+                var monitor = Screen.FromPoint(cursor).Bounds;
+                using var live = new LiveRegionSelector(monitor);
+                var chosen = await SelectWithEscape(live.SelectAsync, live.Cancel);
+                if (chosen is not Rectangle box) return;
+                liveBox = box with { X = box.X + monitor.X, Y = box.Y + monitor.Y };
+                capturePoint = new Point(monitor.X + monitor.Width / 2, monitor.Y + monitor.Height / 2);
+                // Let Windows draw a frame without the overlay before capturing.
+                await Task.Run(() => { DwmFlush(); DwmFlush(); });
+            }
+
+            shot = await Task.Run(() => ScreenCapturer.CaptureMonitorAt(capturePoint, wantHdr));
             var image = shot.Image;
             var hdr = shot.Hdr;
             var areaOnScreen = shot.Bounds;
 
             if (region)
             {
-                // Pause in parallel with showing the overlay so the box appears without delay.
-                var pausing = _settings.PauseMediaWhileSelecting ? MediaPauser.PausePlayingAsync() : null;
-                Rectangle? selection;
-                try
+                Rectangle selection;
+                if (liveBox is Rectangle onScreen)
                 {
+                    selection = onScreen with { X = onScreen.X - shot.Bounds.X, Y = onScreen.Y - shot.Bounds.Y };
+                    selection.Intersect(new Rectangle(Point.Empty, shot.Image.Size));
+                    if (selection.Width < 1 || selection.Height < 1) return;
+                }
+                else
+                {
+                    // Frozen region: drag over the still picture taken when the shortcut was pressed.
                     using var selector = new RegionSelector(shot.Image, shot.Bounds);
-                    selection = selector.ShowDialog() == DialogResult.OK ? selector.Selection : null;
+                    if (await SelectWithEscape(selector.SelectAsync, selector.Cancel) is not Rectangle frozenBox) return;
+                    selection = frozenBox;
                 }
-                finally
-                {
-                    if (pausing is not null) _ = MediaPauser.ResumeAsync(await pausing);
-                }
-                if (selection is null) return;
-                cropped = shot.Image.Clone(selection.Value, PixelFormat.Format32bppArgb);
+                cropped = shot.Image.Clone(selection, PixelFormat.Format32bppArgb);
                 image = cropped;
-                hdr = hdr?.Crop(selection.Value);
+                hdr = hdr?.Crop(selection);
             }
 
             if (_settings.PlaySound) _sound.Play();
@@ -186,6 +208,30 @@ internal sealed class TrayApp : ApplicationContext
             GC.Collect();
         }
     }
+
+    /// <summary>
+    /// Runs a region picker. The pickers never take focus, so Esc is caught as a global shortcut while one is up,
+    /// and media is paused around it if that option is on.
+    /// </summary>
+    private async Task<Rectangle?> SelectWithEscape(Func<Task<Rectangle?>> select, Action cancel)
+    {
+        var pausing = _settings.PauseMediaWhileSelecting ? MediaPauser.PausePlayingAsync() : null;
+        _cancelSelection = cancel;
+        bool escapeHooked = Hotkey.TryParse("Escape", out var esc) && _hotkeys.Register(EscapeId, esc);
+        try
+        {
+            return await select();
+        }
+        finally
+        {
+            _cancelSelection = null;
+            if (escapeHooked) _hotkeys.Unregister(EscapeId);
+            if (pausing is not null) _ = MediaPauser.ResumeAsync(await pausing);
+        }
+    }
+
+    [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
+    private static extern int DwmFlush();
 
     private async Task SaveHdrCopies(HdrFrame hdr, string pngPath)
     {

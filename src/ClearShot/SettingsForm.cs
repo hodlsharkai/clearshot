@@ -9,6 +9,7 @@ internal sealed class SettingsForm : Form
     private readonly HotkeyBox _region = new() { Dock = DockStyle.Fill };
     private readonly CheckBox _sound = new() { Text = "Play a shutter sound", AutoSize = true, Margin = CheckMargin };
     private readonly CheckBox _preview = new() { Text = "Show a small preview after each capture", AutoSize = true, Margin = CheckMargin };
+    private readonly CheckBox _freeze = new() { Text = "Freeze the screen while picking a region", AutoSize = true, Margin = CheckMargin };
     private readonly CheckBox _pauseMedia = new() { Text = "Pause videos and music while picking a region", AutoSize = true, Margin = CheckMargin };
     private readonly CheckBox _hdrJxr = new() { Text = "Save a .jxr copy (opens in HDR in Windows Photos)", AutoSize = true, Margin = CheckMargin };
     private readonly CheckBox _hdrPng = new() { Text = "Save an HDR PNG copy (shows in HDR in Chrome and Edge)", AutoSize = true, Margin = CheckMargin };
@@ -56,6 +57,7 @@ internal sealed class SettingsForm : Form
         _sound.Checked = shown.PlaySound;
         _preview.Checked = shown.ShowPreview;
         _pauseMedia.Checked = shown.PauseMediaWhileSelecting;
+        _freeze.Checked = shown.FreezeWhileSelecting;
         _hdrJxr.Checked = shown.SaveHdrJxr;
         _hdrPng.Checked = shown.SaveHdrPng;
         _startup.Checked = draft?.StartWithWindows ?? StartupRegistration.IsEnabled;
@@ -63,7 +65,7 @@ internal sealed class SettingsForm : Form
         _theme.SelectedIndex = Math.Max(0, Array.FindIndex(Theme.Choices, c => c.Value == settings.Theme));
         _theme.SelectedIndexChanged += (_, _) => ThemePicked?.Invoke(SelectedTheme);
         // Wired after the initial values are set, so opening the window doesn't count as a change.
-        foreach (var box in new[] { _sound, _preview, _pauseMedia, _hdrJxr, _hdrPng })
+        foreach (var box in new[] { _sound, _preview, _freeze, _pauseMedia, _hdrJxr, _hdrPng })
             box.CheckedChanged += (_, _) => ApplyChange();
         _startup.CheckedChanged += (_, _) =>
         {
@@ -110,6 +112,7 @@ internal sealed class SettingsForm : Form
         AddWide(grid, SectionTitle("Options"));
         AddWide(grid, _sound);
         AddWide(grid, _preview);
+        AddWide(grid, _freeze);
         AddWide(grid, _pauseMedia);
         AddWide(grid, _startup);
         AddRow(grid, "Appearance", _theme);
@@ -163,6 +166,7 @@ internal sealed class SettingsForm : Form
         PlaySound = _sound.Checked,
         ShowPreview = _preview.Checked,
         PauseMediaWhileSelecting = _pauseMedia.Checked,
+        FreezeWhileSelecting = _freeze.Checked,
         SaveHdrJxr = _hdrJxr.Checked,
         SaveHdrPng = _hdrPng.Checked,
         Theme = SelectedTheme,
@@ -256,6 +260,7 @@ internal sealed class SettingsForm : Form
         _settings.PlaySound = _sound.Checked;
         _settings.ShowPreview = _preview.Checked;
         _settings.PauseMediaWhileSelecting = _pauseMedia.Checked;
+        _settings.FreezeWhileSelecting = _freeze.Checked;
         _settings.SaveHdrJxr = _hdrJxr.Checked;
         _settings.SaveHdrPng = _hdrPng.Checked;
         SettingsChanged?.Invoke();

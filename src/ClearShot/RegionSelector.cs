@@ -6,9 +6,14 @@ namespace ClearShot;
 /// <summary>
 /// Covers one monitor with a frozen copy of what was on it, dimmed, and lets you drag out a box.
 /// Drawn at 1:1 physical pixels so the selection is exact on 4K and scaled displays.
+/// It never takes focus: the app underneath stays active, so video players and games that pause (or
+/// minimise) when they lose focus carry on. Esc reaches it through a temporary global shortcut instead.
 /// </summary>
 internal sealed class RegionSelector : Form
 {
+    private const int WsExNoActivate = 0x08000000, WsExToolWindow = 0x80, WsExTopmost = 0x8;
+    private readonly TaskCompletionSource<Rectangle?> _result = new();
+
     private static readonly Color Accent = Color.FromArgb(56, 189, 248);
     private readonly Bitmap _frozen;
     private readonly Bitmap _dimmed;
@@ -45,12 +50,38 @@ internal sealed class RegionSelector : Form
         _monitorBounds = monitorBounds;
     }
 
+    protected override bool ShowWithoutActivation => true;
+
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            var cp = base.CreateParams;
+            cp.ExStyle |= WsExNoActivate | WsExToolWindow | WsExTopmost;
+            return cp;
+        }
+    }
+
+    /// <summary>Shows the overlay without taking focus and completes with the chosen area, or null if cancelled.</summary>
+    public Task<Rectangle?> SelectAsync()
+    {
+        FormClosed += (_, _) => _result.TrySetResult(DialogResult == DialogResult.OK ? Selection : null);
+        Show();
+        return _result.Task;
+    }
+
+    /// <summary>Cancels the selection (used for Esc, which arrives as a global shortcut).</summary>
+    public void Cancel()
+    {
+        DialogResult = DialogResult.Cancel;
+        Close();
+    }
+
     protected override void OnShown(EventArgs e)
     {
         base.OnShown(e);
         // DPI handling can nudge a window while it is created on a scaled monitor; pin it back exactly.
         Bounds = _monitorBounds;
-        Activate();
     }
 
     protected override void OnPaintBackground(PaintEventArgs e)
@@ -140,12 +171,6 @@ internal sealed class RegionSelector : Form
     {
         if (e.KeyCode == Keys.Escape) Cancel();
         base.OnKeyDown(e);
-    }
-
-    private void Cancel()
-    {
-        DialogResult = DialogResult.Cancel;
-        Close();
     }
 
     private void UpdateSelection(Rectangle next)
