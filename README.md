@@ -36,6 +36,7 @@ Alt + Shift + E opens the area you picked with a bar of tools beside it. The res
 | Highlighter | H | See-through marker. |
 | Text | T | Pick a font and bold from the Aa button. Drag the corner square to make it any size. Click finished text to edit it again. |
 | Numbered steps | N | Click to drop 1, 2, 3... |
+| Emoji | E | Pick one from the smiley button, then click to place it, in full colour. Scroll to resize. |
 | Pixelate | B | Drag over names, emails or addresses to hide them. |
 | Erase | X | Rubs out drawings and pixelation. Pixelate a box, then erase around the part that should stay hidden. |
 

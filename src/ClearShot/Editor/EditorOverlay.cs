@@ -160,6 +160,7 @@ internal sealed class EditorOverlay : IDisposable
         _monitor = monitorBounds;
         _scale = Dpi.ScaleFor(monitorBounds);
         EraserSize = (int)Math.Round(24 * _scale);
+        EmojiSize = (int)Math.Round(48 * _scale);
         _handle = Math.Max(6, (int)Math.Round(7 * _scale));
         _pad = _handle / 2 + 1;
         _gripReach = Math.Max(5, (int)Math.Round(6 * _scale));
@@ -187,6 +188,7 @@ internal sealed class EditorOverlay : IDisposable
             ToolItem(Tool.Text, "Text (T): click to type, drag the corner square to resize, drag the text to move it", Icons.Text),
             new("Font and bold", Icons.Font, ShowFonts),
             ToolItem(Tool.Step, "Numbered steps (N)", Icons.Step),
+            new("Emoji (E): pick one, then click to place it. Scroll to resize", Icons.Emoji, ShowEmoji, () => Tool == Tool.Emoji),
             ToolItem(Tool.Pixelate, "Pixelate: hide names, emails, addresses (B)", Icons.Pixelate),
             ToolItem(Tool.Eraser, "Erase (X): rub out drawings and pixelation, to trim a pixelated area to shape. Scroll to change size", Icons.Eraser),
             new("Colour: for this tool, and recolours what you just drew or selected", Icons.Colour(() => _typing?.Color ?? _selected?.Color ?? Colour), ShowColours, SeparatorBefore: true),
@@ -396,6 +398,12 @@ internal sealed class EditorOverlay : IDisposable
             case Tool.Rectangle:
                 _drawing = new RectangleShape { Color = Colour, Size = StrokeSize, Start = at, End = at };
                 break;
+            case Tool.Emoji:
+                var sticker = new EmojiSticker { Emoji = Emoji, Size = EmojiSize, Centre = at };
+                _doc.Add(sticker);
+                _lastDrawn = sticker;
+                InvalidateImage(sticker.Bounds);
+                break;
             case Tool.Eraser:
                 var eraser = new EraserStroke { Size = EraserSize, Original = _doc.Original };
                 eraser.Points.Add(at);
@@ -544,7 +552,7 @@ internal sealed class EditorOverlay : IDisposable
         if (_selected is not null && _typing is null)
         {
             var before = _selected.Bounds;
-            float size = _selected is TextNote
+            float size = _selected is TextNote or EmojiSticker
                 ? Math.Clamp(_selected.Size * (steps > 0 ? 1.1f : 1 / 1.1f), MinTextSize, MaxTextSize)
                 : Math.Clamp(_selected.Size + steps, 1, 40);
             _doc.Resize(_selected, size);
@@ -560,6 +568,10 @@ internal sealed class EditorOverlay : IDisposable
                 _typing.Size = TextSize;
                 InvalidateImage(Rectangle.Union(before, _typing.Bounds));
             }
+        }
+        else if (Tool == Tool.Emoji)
+        {
+            EmojiSize = Math.Clamp(EmojiSize * (steps > 0 ? 1.1f : 1 / 1.1f), 8, 2000);
         }
         else if (Tool == Tool.Eraser)
         {
@@ -635,6 +647,10 @@ internal sealed class EditorOverlay : IDisposable
 
     private float RingDiameter => Math.Max(4, Tool == Tool.Highlighter ? StrokeSize * 4 : Tool == Tool.Eraser ? EraserSize : StrokeSize);
 
+    /// <summary>The emoji placed next, and its size in image pixels.</summary>
+    public string Emoji { get; private set; } = EmojiRenderer.Quick[0];
+    public float EmojiSize { get; private set; } = 48;
+
     /// <summary>The eraser brush's size, in image pixels.</summary>
     public float EraserSize { get; private set; } = 24;
 
@@ -687,6 +703,7 @@ internal sealed class EditorOverlay : IDisposable
             Keys.N => Tool.Step,
             Keys.B => Tool.Pixelate,
             Keys.X => Tool.Eraser,
+            Keys.E => Tool.Emoji,
             _ => null,
         };
         if (picked is Tool t) { PickTool(t); return true; }
@@ -785,6 +802,7 @@ internal sealed class EditorOverlay : IDisposable
         StepMarker => Tool.Step,
         TextNote => Tool.Text,
         EraserStroke => Tool.Eraser,
+        EmojiSticker => Tool.Emoji,
         _ => Tool.Pixelate,
     };
 
@@ -817,6 +835,95 @@ internal sealed class EditorOverlay : IDisposable
             _canvas.BeginInvoke(() => { _canvas.Activate(); menu.Dispose(); });
         };
         menu.Show(new Point(button.Right, button.Top));
+    }
+
+    /// <summary>A grid of emoji under the smiley button: click one to use it (or swap the selected sticker for it).</summary>
+    private void ShowEmoji(Rectangle button)
+    {
+        var drop = new ToolStripDropDown { Padding = Padding.Empty };
+        var grid = new EmojiGrid(_scale);
+        grid.Picked += e =>
+        {
+            drop.Close();
+            PickEmoji(e);
+        };
+        drop.Items.Add(new ToolStripControlHost(grid) { Padding = Padding.Empty, Margin = Padding.Empty, AutoSize = false, Size = grid.Size });
+        drop.Closed += (_, _) => _canvas.BeginInvoke(() => { _canvas.Activate(); drop.Dispose(); });
+        drop.Show(new Point(button.Right, button.Top));
+    }
+
+    internal void PickEmoji(string emoji)
+    {
+        Emoji = emoji;
+        if (_selected is EmojiSticker sticker)
+        {
+            // Swapping the emoji on a selected sticker: one step that Ctrl+Z takes back.
+            var replacement = new EmojiSticker { Emoji = emoji, Size = sticker.Size, Centre = sticker.Centre };
+            _doc.Replace(sticker, replacement);
+            Select(replacement);
+            InvalidateImage(replacement.Bounds);
+            return;
+        }
+        if (Tool != Tool.Emoji) PickTool(Tool.Emoji);
+    }
+
+    /// <summary>The emoji picker's grid: 8 across, each drawn in colour.</summary>
+    private sealed class EmojiGrid : Control
+    {
+        private const int Columns = 8;
+        private readonly int _cell;
+        private int _hover = -1;
+        public event Action<string>? Picked;
+
+        public EmojiGrid(float scale)
+        {
+            _cell = (int)Math.Round(40 * scale);
+            int rows = (EmojiRenderer.Quick.Length + Columns - 1) / Columns;
+            Size = new Size(Columns * _cell + 8, rows * _cell + 8);
+            DoubleBuffered = true;
+            BackColor = ToolBar.Background;
+            Cursor = Cursors.Hand;
+        }
+
+        private int IndexAt(Point p)
+        {
+            int col = (p.X - 4) / _cell, row = (p.Y - 4) / _cell;
+            int i = row * Columns + col;
+            return col is >= 0 and < Columns && row >= 0 && i < EmojiRenderer.Quick.Length ? i : -1;
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            for (int i = 0; i < EmojiRenderer.Quick.Length; i++)
+            {
+                var cell = new Rectangle(4 + i % Columns * _cell, 4 + i / Columns * _cell, _cell, _cell);
+                if (i == _hover)
+                {
+                    using var hover = new SolidBrush(ToolBar.Hover);
+                    g.FillRectangle(hover, cell);
+                }
+                float size = _cell * 0.62f;
+                var picture = EmojiRenderer.Render(EmojiRenderer.Quick[i], size);
+                int box = EmojiRenderer.BoxFor(size);
+                g.DrawImage(picture, cell.X + (cell.Width - box) / 2, cell.Y + (cell.Height - box) / 2, box, box);
+            }
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            base.OnMouseMove(e);
+            int i = IndexAt(e.Location);
+            if (i != _hover) { _hover = i; Invalidate(); }
+        }
+
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            base.OnMouseUp(e);
+            int i = IndexAt(e.Location);
+            if (i >= 0) Picked?.Invoke(EmojiRenderer.Quick[i]);
+        }
     }
 
     /// <summary>Opens the font list: each font shown in its own typeface, plus bold and every installed font.</summary>
@@ -875,6 +982,7 @@ internal sealed class EditorOverlay : IDisposable
         _typing is not null ? "Typing  ·  drag the corner square to resize  ·  Esc or click outside to finish"
         : _selected is LineShape or RectangleShape or PixelateBox ? "Selected  ·  drag a square to reshape  ·  drag to move  ·  scroll: thickness  ·  Delete: remove  ·  Esc: deselect"
         : _selected is not null ? "Selected  ·  drag to move  ·  scroll: size  ·  colour box: recolour  ·  Delete: remove  ·  Esc: deselect"
+        : Tool == Tool.Emoji ? "Emoji  ·  click to place it  ·  scroll: size  ·  the smiley button picks another"
         : Tool == Tool.Eraser ? "Erase  ·  drag to rub out drawings and pixelation  ·  scroll: eraser size  ·  Ctrl+Z: undo"
         : Tool == Tool.Pixelate && _doc.Items.OfType<PixelateBox>().Any() ? "Tip: use Erase (X) to trim the pixelated area to the shape you want hidden"
         : "Enter: copy and save  ·  Esc or right-click: close  ·  Scroll: size");

@@ -44,6 +44,8 @@ public class EditorLookTests
                     editor.PickTool(Tool.Eraser);
                     Drag(95, 400, 250, 400);
                 }
+                editor.PickEmoji("\U0001F525");
+                Drag(680, 150, 680, 150);
                 editor.PickTool(Tool.Step);
                 Drag(560, 420, 560, 420);
                 Drag(560, 470, 560, 470);

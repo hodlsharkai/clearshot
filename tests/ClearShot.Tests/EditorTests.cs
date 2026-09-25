@@ -97,6 +97,21 @@ public class AnnotationTests
     }
 
     [Fact]
+    public void Emoji_are_drawn_in_colour()
+    {
+        using var doc = new EditDocument(Solid(200, 200, Color.Gray));
+        doc.Add(new EmojiSticker { Emoji = "\U0001F525", Size = 80, Centre = new(100, 100) }); // fire
+        int coloured = 0;
+        for (int y = 50; y < 150; y += 2)
+        for (int x = 50; x < 150; x += 2)
+        {
+            var c = doc.Baked.GetPixel(x, y);
+            if (Math.Abs(c.R - c.B) > 60) coloured++;
+        }
+        Assert.True(coloured > 100, $"Only {coloured} coloured pixels: the emoji came out black and white.");
+    }
+
+    [Fact]
     public void Steps_count_up_and_undo_takes_them_back()
     {
         using var doc = new EditDocument(Solid(300, 100, Color.Gray));
@@ -263,6 +278,40 @@ public class EditorOverlayTests
             Assert.Empty(doc.Items);
             editor.Key(Keys.Control | Keys.C);
             Assert.Equal(EditAction.Copy, run.Result.Action);
+        });
+    }
+
+    [Fact]
+    public void E_places_emoji_that_scroll_select_and_swap_like_other_drawings()
+    {
+        OnUiThread(() =>
+        {
+            using var doc = new EditDocument(new Bitmap(800, 600));
+            using var editor = new EditorOverlay(doc, Monitor, new Rectangle(0, 0, 800, 600)) { TakeFocus = false };
+            var run = editor.RunAsync();
+            Pump();
+            Assert.True(editor.Key(Keys.E));
+            Assert.Equal(Tool.Emoji, editor.Tool);
+            float size = editor.EmojiSize;
+            editor.Wheel(120);
+            Assert.True(editor.EmojiSize > size);
+            editor.PointerDown(new Point(Monitor.X + 200, Monitor.Y + 200), MouseButtons.Left);
+            editor.PointerUp();
+            var sticker = doc.Items.OfType<EmojiSticker>().Single();
+            Assert.Equal(editor.EmojiSize, sticker.Size);
+
+            // Select it, make it bigger, swap it for another emoji, undo the swap.
+            editor.PickTool(Tool.None);
+            editor.PointerDown(new Point(Monitor.X + 200, Monitor.Y + 200), MouseButtons.Left);
+            editor.PointerUp();
+            Assert.Same(sticker, editor.Selected);
+            editor.Wheel(120);
+            Assert.True(sticker.Size > size);
+            editor.PickEmoji(EmojiRenderer.Quick[16]);
+            Assert.Equal(EmojiRenderer.Quick[16], doc.Items.OfType<EmojiSticker>().Single().Emoji);
+            editor.Undo();
+            Assert.Same(sticker, doc.Items.OfType<EmojiSticker>().Single());
+            editor.Finish(EditAction.Cancel);
         });
     }
 

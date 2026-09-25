@@ -4,7 +4,7 @@ using System.Drawing.Imaging;
 namespace ClearShot.Editor;
 
 /// <summary>The drawing tools in the editor's side bar. None means dragging inside the area moves it.</summary>
-internal enum Tool { None, Pen, Line, Arrow, Rectangle, Highlighter, Text, Step, Pixelate, Eraser }
+internal enum Tool { None, Pen, Line, Arrow, Rectangle, Highlighter, Text, Step, Emoji, Pixelate, Eraser }
 
 /// <summary>
 /// Something drawn on a screenshot. Coordinates are in the pixels of the captured monitor, so drawings stay
@@ -53,6 +53,43 @@ internal abstract class Annotation
 }
 
 /// <summary>Freehand pen, or a see-through highlighter.</summary>
+/// <summary>A full-colour emoji, placed like a sticker. <see cref="Annotation.Size"/> is its height in image pixels.</summary>
+internal sealed class EmojiSticker : Annotation
+{
+    public PointF Centre { get; set; }
+    public string Emoji { get; set; } = "😀";
+
+    private RectangleF Box
+    {
+        get
+        {
+            int box = EmojiRenderer.BoxFor(Size);
+            return new RectangleF(Centre.X - box / 2f, Centre.Y - box / 2f, box, box);
+        }
+    }
+
+    public override void Draw(Graphics g, Bitmap target)
+    {
+        var picture = EmojiRenderer.Render(Emoji, Size);
+        var box = Box;
+        var state = g.Save();
+        g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+        g.DrawImage(picture, box.X, box.Y, box.Width, box.Height);
+        g.Restore(state);
+    }
+
+    public override Rectangle Bounds => Grow(Box, 2);
+
+    public override bool Hit(PointF p, float tolerance)
+    {
+        var r = new RectangleF(Centre.X - Size / 2, Centre.Y - Size / 2, Size, Size);
+        r.Inflate(tolerance, tolerance);
+        return r.Contains(p);
+    }
+
+    public override void Offset(float dx, float dy) => Centre = new PointF(Centre.X + dx, Centre.Y + dy);
+}
+
 /// <summary>
 /// A round brush that rubs out whatever was drawn before it (pixelation, arrows, text), bringing back the original
 /// screenshot underneath. Drag a pixelate box, then erase around the part that should stay hidden.
@@ -438,6 +475,20 @@ internal sealed class EditDocument : IDisposable
         var old = item.Size;
         item.Size = size;
         _undo.Push(() => item.Size = old);
+        Rebake();
+    }
+
+    /// <summary>Swaps one drawing for another in the same place in the stack, as a single undo step.</summary>
+    public void Replace(Annotation old, Annotation replacement)
+    {
+        int index = _items.IndexOf(old);
+        if (index < 0) return;
+        _items[index] = replacement;
+        _undo.Push(() =>
+        {
+            int at = _items.IndexOf(replacement);
+            if (at >= 0) _items[at] = old;
+        });
         Rebake();
     }
 

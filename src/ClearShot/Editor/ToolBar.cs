@@ -201,6 +201,14 @@ internal static class Icons
         g.DrawString("a", sans, b, 8f, 4.5f);
     }
 
+    public static void Emoji(Graphics g, Pen p, Brush b)
+    {
+        g.DrawEllipse(p, 2, 2, 12, 12);
+        g.FillEllipse(b, 5, 5.5f, 1.8f, 1.8f);
+        g.FillEllipse(b, 9.2f, 5.5f, 1.8f, 1.8f);
+        g.DrawArc(p, 4.8f, 5.3f, 6.4f, 6.4f, 20, 140);
+    }
+
     public static void Eraser(Graphics g, Pen p, Brush b)
     {
         // A tilted eraser block with its rubbing end shaded, over a line.

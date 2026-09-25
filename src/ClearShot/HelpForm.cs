@@ -51,6 +51,7 @@ internal sealed class HelpForm : Form
         Row(grid, "H", "Highlighter");
         Row(grid, "T", "Text. Pick a font from the Aa button, drag the corner square to make it any size, click finished text to edit it.");
         Row(grid, "N", "Numbered steps: click to drop 1, 2, 3...");
+        Row(grid, "E", "Emoji: pick one from the smiley button, then click to place it. Scroll to resize.");
         Row(grid, "B", "Pixelate: drag over names, emails or addresses to hide them.");
         Row(grid, "X", "Erase: rub out drawings and pixelation, to trim a pixelated area to exactly the shape you want hidden.");
         Row(grid, "Scroll", "Thicker or thinner lines, bigger or smaller text.");
