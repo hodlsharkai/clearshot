@@ -1,83 +1,99 @@
+<img src="assets/clearshot-256.png" width="72" alt="">
+
 # ClearShot
 
-A fast, private screenshot tool for Windows.
+A screenshot tool for Windows. Press a shortcut and the picture is copied to your clipboard and saved as a PNG. It can also record short GIFs, and lets you draw on a screenshot before you share it.
 
-- **No account, no uploads, no tracking.** Your screenshots never leave your PC. There is no ClearShot server, so there is nothing to hack.
-- **One key, done.** Press a shortcut and the screenshot is saved and already on your clipboard, ready to paste.
-- **Instant GIFs.** Drag a box, record, stop: a looping GIF is saved and copied, so pasting into Discord uploads the animation.
-- **True resolution.** 4K stays 4K, even on scaled displays.
-- **Works in games.** Uses the same Windows capture system as OBS and Xbox Game Bar. Nothing is injected into the game.
-- **HDR done right.** HDR screens are tone-mapped so screenshots look the way they did on screen, not washed out. Optional HDR mode also saves true HDR copies.
+It runs entirely on your PC. There's no account, no upload and no network connection.
+
+**[Download ClearShot.exe](https://github.com/hodlsharkai/clearshot/releases/latest)** (Windows 10 or 11, 64-bit). There's no installer: run the file and ClearShot sits in the system tray.
+
+Windows may say it "protected your PC" because the app isn't code-signed. Click **More info**, then **Run anyway**.
 
 ## Shortcuts
 
 | Shortcut | What it does |
 |---|---|
-| Alt + C | Captures the whole monitor your mouse is on |
-| Alt + Shift + C | Drag a box around the part you want, on the live screen. Esc or right-click cancels. |
-| Alt + G | Record a GIF: drag a box, then press Alt + G again (or Esc, or Stop) to finish. Up to 15 seconds. |
+| Alt + C | Captures the whole monitor your mouse is on. |
+| Alt + Shift + C | Drag a box around the part you want. Esc or right-click cancels. |
+| Alt + Shift + E | Drag a box, then draw on it before copying or saving (see below). |
+| Alt + G | Records a GIF: drag a box, then press Alt + G again, Esc, or Stop to finish. Up to 15 seconds. |
 
-Change either one in **Settings** (right-click the tray icon).
+All four can be changed in the ClearShot window (click the tray icon). Screenshots go to `Pictures\ClearShot` unless you pick another folder.
 
-Every capture is copied to the clipboard and saved as a PNG in `Pictures\ClearShot` (you can pick another folder).
+The screen keeps moving while you pick an area, so videos and streams don't pause.
 
-### Want to use Print Screen?
+## Drawing on a screenshot
 
-Set it in Settings. Windows 11 may keep Print Screen for its own Snipping Tool; if so, ClearShot tells you and offers to open **Settings > Accessibility > Keyboard > Use the Print screen key to open screen capture** so you can turn it off.
+Alt + Shift + E opens the area you picked with a bar of tools beside it. The rest of the screen stays live behind a dim layer.
 
-## HDR mode
+| Tool | Key | Notes |
+|---|---|---|
+| Select | V | Click any drawing to move it, recolour it, resize it (scroll) or delete it (Delete). Drag the squares on an arrow's ends or a box's corners to reshape it. |
+| Pen | P | Freehand. |
+| Line / Arrow | L / A | |
+| Rectangle | R | |
+| Highlighter | H | See-through marker. |
+| Text | T | Pick a font and bold from the Aa button. Drag the corner square to make it any size. Click finished text to edit it again. |
+| Numbered steps | N | Click to drop 1, 2, 3... |
+| Pixelate | B | Drag over names, emails or addresses to hide them. |
 
-When your screen is in HDR, ClearShot can also save true HDR copies next to the normal PNG. Turn on either or both in the ClearShot window:
+- **Colour:** each tool remembers its own colour. Changing it also recolours the drawing you just made, or the one you've selected.
+- **Thickness:** scroll to change it.
+- **Undo:** Ctrl+Z undoes any change, one step at a time.
+- **Moving the area:** drag its edges to resize it, or drag empty space with Select to move it.
 
-- **.jxr**: the format Xbox Game Bar uses. Opens in full HDR in Windows Photos.
-- **HDR PNG**: 16-bit PNG in the HDR10 colour space. Shows in full HDR in Chrome and Edge.
+Then choose what to do with it:
 
-The normal PNG is still what gets copied to the clipboard, because most apps can't show HDR.
+| Button | Key | |
+|---|---|---|
+| Copy and save | Enter | Same as the other shortcuts. |
+| Copy | Ctrl + C | Clipboard only. |
+| Save | Ctrl + S | File only. |
+| Pin | | Floats the picture on top of your other windows. Drag to move, scroll to resize, double-click or Esc to close. |
+| Close | Esc | Throws it away. |
 
-## GIF quality
+## GIFs
 
-In the ClearShot window, under **GIFs**:
+- **Standard** (default): up to 960 px wide at 15 fps. Small files that suit Discord.
+- **High:** up to 1920 px wide at 30 fps.
+- **Also save an MP4:** a full-colour copy next to the GIF, much smaller. For game or video footage it looks far better, since a GIF is limited to 256 colours per frame.
 
-- **Standard** (default): up to 960 px wide at 15 fps. Small files, ideal for Discord.
-- **High**: up to 1920 px wide at 30 fps. Bigger files.
-- For game and video footage, tick **Also save an MP4**: GIFs are limited to 256 colours per frame, MP4s aren't.
+The GIF is copied as a file, so pasting it into Discord uploads the animation rather than a still.
 
-ClearShot has its own GIF encoder, built for smooth, steady animation of screen and game footage: pixels that haven't changed are left alone (so still areas can't flicker), each frame gets its own palette with extra room for dark shades and always a true black, and redrawn pixels are error-diffusion dithered only where it helps (smooth gradients, not busy detail or the very darkest shades, which Windows HDR mode shows much brighter). On dark game footage, judged as seen on a normal screen and in Windows HDR mode, it came out ahead of FFmpeg and close to gifski (maximum quality), with the fewest blotches and the smallest files.
-- **Also save an MP4**: saves an MP4 next to the GIF, in full colour and much smaller. The GIF is still what gets copied.
+## HDR
 
-## Download
+On an HDR screen, screenshots are tone-mapped so they look the way they did on screen instead of washed out. You can also save true HDR copies alongside the normal PNG:
 
-**[Download the latest ClearShot.exe](https://github.com/hodlsharkai/ClearShot/releases/latest)** and run it. No installer and no admin rights needed.
+- **.jxr** opens in HDR in Windows Photos.
+- **HDR PNG** (16-bit, HDR10) shows in HDR in Chrome and Edge.
 
-Windows may say it "protected your PC" because the app isn't code-signed yet. Click **More info**, then **Run anyway**.
-
-Open ClearShot again at any time (or click its tray icon) to change the save folder, shortcuts and options. Tick **Start ClearShot with Windows** if you want it always ready.
+The normal PNG is still what gets copied, because most apps can't show HDR. HDR copies don't include drawings.
 
 ## Privacy
 
-ClearShot makes no network connections. Settings live in `%APPDATA%\ClearShot\settings.json` and a small diagnostic log in `%APPDATA%\ClearShot\clearshot.log`. Both stay on your PC. The code is all here for anyone to check.
+ClearShot makes no network connections. Settings are kept in `%APPDATA%\ClearShot\settings.json` and a small diagnostic log in `%APPDATA%\ClearShot\clearshot.log`. Neither leaves your PC.
 
 ## Known limits
 
-- In the rare game that uses true exclusive fullscreen, the region overlay can make the game minimise. The full-screen shortcut is unaffected.
-- Captures are single-monitor (the one under your mouse).
+- Games in true exclusive fullscreen may minimise when an overlay or the editor opens. Borderless windowed is fine, and the full-screen shortcut never shows an overlay.
+- Captures cover one monitor: the one under your mouse.
+- Windows only.
 
-## Build
+## Building it yourself
 
-Requires the .NET 10 SDK.
+You need the .NET 10 SDK.
 
 ```
 dotnet test
 dotnet publish src/ClearShot/ClearShot.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -o publish
 ```
 
-Set `CLEARSHOT_LIVE=1` to also run the tests that capture the real screen.
-
-Releases are built by GitHub Actions: pushing a tag such as `v1.1.0` builds, tests and publishes `ClearShot.exe` to Releases.
+`CLEARSHOT_LIVE=1` also runs the tests that capture the real screen. Pushing a tag such as `v1.4.0` makes GitHub Actions build, test and publish `ClearShot.exe` to Releases.
 
 ## Buy me a beer
 
-ClearShot is free, with no ads and no accounts. If it's useful to you, a tip keeps it going. Thank you!
+ClearShot is free and has no ads. If it's useful to you, a tip is appreciated.
 
 | Network | Address |
 |---|---|
@@ -85,7 +101,7 @@ ClearShot is free, with no ads and no accounts. If it's useful to you, a tip kee
 | Ethereum (ETH, plus Base, Arbitrum, Optimism, Polygon and BNB Chain, and tokens like USDC and USDT on them) | `0xB78c5D07b6F957168998315E49210074Dc55F179` |
 | Solana (SOL, USDC and other Solana tokens) | `TC3YtercaL9u6fVfDCpe6hxW48rzV4zg5DKi1vDjzuM` |
 
-Only send each coin to its matching network. The same addresses, with QR codes, are under **Buy me a beer** in the ClearShot window.
+Only send each coin on its matching network. The same addresses, with QR codes, are under **Buy me a beer** in the ClearShot window.
 
 ## Licence
 
