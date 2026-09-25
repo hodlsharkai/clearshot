@@ -155,8 +155,10 @@ internal sealed class EditorOverlay : IDisposable
 
     /// <param name="monitorBounds">Where the captured monitor sits on the desktop.</param>
     /// <param name="area">The picked area, in the monitor's own pixels.</param>
-    public EditorOverlay(EditDocument doc, Rectangle monitorBounds, Rectangle area)
+    /// <param name="forGif">Editing a GIF's first frame: the area is fixed (it's what was recorded) and there's no Pin.</param>
+    public EditorOverlay(EditDocument doc, Rectangle monitorBounds, Rectangle area, bool forGif = false)
     {
+        _forGif = forGif;
         _doc = doc;
         _monitor = monitorBounds;
         _scale = Dpi.ScaleFor(monitorBounds);
@@ -197,7 +199,7 @@ internal sealed class EditorOverlay : IDisposable
         ]);
         _actions = new ToolBar(vertical: false, _scale,
         [
-            new("Pin to screen", Icons.Pin, _ => Finish(EditAction.Pin)),
+            .. (forGif ? Array.Empty<ToolBar.Item>() : [new ToolBar.Item("Pin to screen", Icons.Pin, _ => Finish(EditAction.Pin))]),
             new("Copy (Ctrl+C)", Icons.Copy, _ => Finish(EditAction.Copy)),
             new("Save (Ctrl+S)", Icons.Save, _ => Finish(EditAction.Save)),
             new("Copy and save (Enter)", Icons.Done, _ => Finish(EditAction.Done), SeparatorBefore: true, Primary: true),
@@ -208,6 +210,7 @@ internal sealed class EditorOverlay : IDisposable
     }
 
     public Rectangle Area => _area;
+    private readonly bool _forGif;
 
     /// <summary>Tests turn this off so running them never pulls focus away from what the user is doing.</summary>
     internal bool TakeFocus { get; init; } = true;
@@ -268,6 +271,8 @@ internal sealed class EditorOverlay : IDisposable
 
     private Grip HitTest(Point image)
     {
+        // A GIF's area is what was recorded: it can't be moved or resized.
+        if (_forGif) return Grip.None;
         int r = _gripReach;
         bool nearL = Math.Abs(image.X - _area.Left) <= r, nearR = Math.Abs(image.X - _area.Right) <= r;
         bool nearT = Math.Abs(image.Y - _area.Top) <= r, nearB = Math.Abs(image.Y - _area.Bottom) <= r;
@@ -938,6 +943,7 @@ internal sealed class EditorOverlay : IDisposable
         : Tool == Tool.Emoji ? "Emoji  ·  click to place it  ·  scroll: size  ·  the smiley button picks another"
         : Tool == Tool.Eraser ? "Erase  ·  drag to rub out drawings and pixelation  ·  scroll: eraser size  ·  Ctrl+Z: undo"
         : Tool == Tool.Pixelate && _doc.Items.OfType<PixelateBox>().Any() ? "Tip: use Erase (X) to trim the pixelated area to the shape you want hidden"
+        : _forGif ? "Editing your GIF: drawings go on every frame  ·  Enter: copy and save  ·  Esc: throw it away"
         : "Enter: copy and save  ·  Esc or right-click: close  ·  Scroll: size");
 
     internal void Finish(EditAction action)

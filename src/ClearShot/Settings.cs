@@ -19,6 +19,7 @@ internal sealed class Settings
     public string RegionHotkey { get; set; } = "Alt+Shift+C";
     public string GifHotkey { get; set; } = "Alt+G";
     public string EditHotkey { get; set; } = "Alt+Shift+E";
+    public string GifEditHotkey { get; set; } = "Alt+Shift+G";
     public string GifQuality { get; set; } = "Standard";
     public bool SaveMp4 { get; set; }
     public bool PlaySound { get; set; } = true;

@@ -9,6 +9,7 @@ internal sealed class SettingsForm : Form
     private readonly HotkeyBox _region = new() { Dock = DockStyle.Fill };
     private readonly HotkeyBox _gif = new() { Dock = DockStyle.Fill };
     private readonly HotkeyBox _edit = new() { Dock = DockStyle.Fill };
+    private readonly HotkeyBox _gifEdit = new() { Dock = DockStyle.Fill };
     private readonly CheckBox _sound = new() { Text = "Play a shutter sound", AutoSize = true, Margin = CheckMargin };
     private readonly CheckBox _preview = new() { Text = "Show a small preview after each capture", AutoSize = true, Margin = CheckMargin };
     private readonly CheckBox _freeze = new() { Text = "Freeze the screen while picking a region", AutoSize = true, Margin = CheckMargin };
@@ -60,6 +61,7 @@ internal sealed class SettingsForm : Form
         _region.Value = Parse(shown.RegionHotkey, "Alt+Shift+C");
         _gif.Value = Parse(shown.GifHotkey, "Alt+G");
         _edit.Value = Parse(shown.EditHotkey, "Alt+Shift+E");
+        _gifEdit.Value = Parse(shown.GifEditHotkey, "Alt+Shift+G");
         _sound.Checked = shown.PlaySound;
         _preview.Checked = shown.ShowPreview;
         _pauseMedia.Checked = shown.PauseMediaWhileSelecting;
@@ -82,7 +84,7 @@ internal sealed class SettingsForm : Form
             try { StartupRegistration.Set(_startup.Checked); }
             catch (Exception ex) { Log.Write($"Could not change startup setting: {ex.Message}"); }
         };
-        foreach (var box in new[] { _fullScreen, _region, _edit, _gif })
+        foreach (var box in new[] { _fullScreen, _region, _edit, _gif, _gifEdit })
         {
             box.Enter += (_, _) => RecordingShortcut?.Invoke(true);
             box.Leave += (_, _) => RecordingShortcut?.Invoke(false);
@@ -102,6 +104,7 @@ internal sealed class SettingsForm : Form
         AddRow(shortcuts, "Pick a region", _region);
         AddRow(shortcuts, "Capture and edit", _edit);
         AddRow(shortcuts, "Record a GIF", _gif);
+        AddRow(shortcuts, "Record and edit a GIF", _gifEdit);
         AddWide(shortcuts, Hint("Click a box, then press the keys you want. ClearShot works in games too. Capture and edit lets you draw arrows, text and numbered steps, hide details and pin the picture on screen before copying."));
 
         var saving = Page();
@@ -213,6 +216,7 @@ internal sealed class SettingsForm : Form
         RegionHotkey = _region.Value.ToString(),
         GifHotkey = _gif.Value.ToString(),
         EditHotkey = _edit.Value.ToString(),
+        GifEditHotkey = _gifEdit.Value.ToString(),
         PlaySound = _sound.Checked,
         ShowPreview = _preview.Checked,
         PauseMediaWhileSelecting = _pauseMedia.Checked,
@@ -379,7 +383,7 @@ internal sealed class SettingsForm : Form
     /// <summary>Checks and stores what's in the window, then tells ClearShot to save it. Invalid input is undone.</summary>
     internal void ApplyChange()
     {
-        var shortcuts = new List<Hotkey> { _fullScreen.Value, _region.Value, _gif.Value, _edit.Value };
+        var shortcuts = new List<Hotkey> { _fullScreen.Value, _region.Value, _gif.Value, _edit.Value, _gifEdit.Value };
         if (shortcuts.Distinct().Count() != shortcuts.Count)
         {
             MessageBox.Show(this, "Each shortcut needs to be different.", AppInfo.Name, MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -387,6 +391,7 @@ internal sealed class SettingsForm : Form
             _region.Value = Parse(_settings.RegionHotkey, "Alt+Shift+C");
             _gif.Value = Parse(_settings.GifHotkey, "Alt+G");
             _edit.Value = Parse(_settings.EditHotkey, "Alt+Shift+E");
+            _gifEdit.Value = Parse(_settings.GifEditHotkey, "Alt+Shift+G");
             return;
         }
         try
@@ -405,6 +410,7 @@ internal sealed class SettingsForm : Form
         _settings.RegionHotkey = _region.Value.ToString();
         _settings.GifHotkey = _gif.Value.ToString();
         _settings.EditHotkey = _edit.Value.ToString();
+        _settings.GifEditHotkey = _gifEdit.Value.ToString();
         _settings.PlaySound = _sound.Checked;
         _settings.ShowPreview = _preview.Checked;
         _settings.PauseMediaWhileSelecting = _pauseMedia.Checked;

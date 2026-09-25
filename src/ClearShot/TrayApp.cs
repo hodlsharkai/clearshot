@@ -7,7 +7,7 @@ namespace ClearShot;
 
 internal sealed class TrayApp : ApplicationContext
 {
-    private const int FullScreenId = 1, RegionId = 2, EscapeId = 3, GifId = 4, EditId = 5;
+    private const int FullScreenId = 1, RegionId = 2, EscapeId = 3, GifId = 4, EditId = 5, GifEditId = 6;
 
     private static readonly TimeSpan GifMaxLength = TimeSpan.FromSeconds(15);
     private const long DiscordFreeLimitBytes = 10 * 1024 * 1024;
@@ -22,6 +22,7 @@ internal sealed class TrayApp : ApplicationContext
     private readonly ToolStripMenuItem _regionItem = new("Capture region");
     private readonly ToolStripMenuItem _gifItem = new("Record a GIF");
     private readonly ToolStripMenuItem _editItem = new("Capture and edit");
+    private readonly ToolStripMenuItem _gifEditItem = new("Record and edit a GIF");
     private readonly List<PinWindow> _pins = [];
     // A hidden control, so signals from other threads (a second copy of ClearShot starting) reach the UI thread.
     private readonly Control _uiThread = new();
@@ -43,6 +44,7 @@ internal sealed class TrayApp : ApplicationContext
         _fullScreenItem.Click += async (_, _) => await FromMenu(region: false);
         _regionItem.Click += async (_, _) => await FromMenu(region: true);
         _gifItem.Click += async (_, _) => { await Task.Delay(250); await RecordGif(); };
+        _gifEditItem.Click += async (_, _) => { await Task.Delay(250); await RecordGif(edit: true); };
         _editItem.Click += async (_, _) => { await Task.Delay(250); await CaptureAndEdit(); };
 
         var menu = new ContextMenuStrip();
@@ -53,6 +55,7 @@ internal sealed class TrayApp : ApplicationContext
         menu.Items.Add(_regionItem);
         menu.Items.Add(_editItem);
         menu.Items.Add(_gifItem);
+        menu.Items.Add(_gifEditItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Open screenshots folder", null, (_, _) => OpenFolder(_settings.SaveFolder));
         menu.Items.Add("How to use", null, (_, _) => HelpForm.ShowFor(_settings));
@@ -74,6 +77,7 @@ internal sealed class TrayApp : ApplicationContext
         {
             if (id == EscapeId) { _cancelSelection?.Invoke(); _gifStop?.Cancel(); return; }
             if (id == GifId) { await RecordGif(); return; }
+            if (id == GifEditId) { await RecordGif(edit: true); return; }
             if (id == EditId) { await CaptureAndEdit(); return; }
             await Capture(region: id == RegionId);
         };
@@ -100,6 +104,7 @@ internal sealed class TrayApp : ApplicationContext
         Register(FullScreenId, _settings.FullScreenHotkey, _fullScreenItem, failed);
         Register(RegionId, _settings.RegionHotkey, _regionItem, failed);
         Register(GifId, _settings.GifHotkey, _gifItem, failed);
+        Register(GifEditId, _settings.GifEditHotkey, _gifEditItem, failed);
         Register(EditId, _settings.EditHotkey, _editItem, failed);
         // Only speak up once per problem, not every time the window is opened or a box is clicked.
         var problem = string.Join("|", failed);
@@ -349,8 +354,9 @@ internal sealed class TrayApp : ApplicationContext
     /// <summary>
     /// Press the GIF shortcut to pick an area and start recording; press it again (or Esc, or Stop) to finish.
     /// The GIF is saved and copied as a file, so pasting into Discord uploads the animation.
+    /// With <paramref name="edit"/>, the editor opens on the first frame first; what's drawn goes on every frame.
     /// </summary>
-    private async Task RecordGif()
+    private async Task RecordGif(bool edit = false)
     {
         if (_gifStop is not null) { _gifStop.Cancel(); return; }
         if (_busy) return;
@@ -388,6 +394,15 @@ internal sealed class TrayApp : ApplicationContext
                 _gifStop = null;
             }
 
+            bool copy = true;
+            if (edit)
+            {
+                overlay.Hide();
+                var result = await EditGif(recording, monitor, box);
+                if (result == EditAction.Cancel) return;
+                copy = result != EditAction.Save;
+            }
+
             Directory.CreateDirectory(_settings.SaveFolder);
             var path = FileNamer.UniquePath(_settings.SaveFolder, DateTime.Now, ".gif");
             using var first = FirstFrame(recording); // before encoding releases the frames
@@ -408,11 +423,11 @@ internal sealed class TrayApp : ApplicationContext
             }
             overlay.ShowSaving("Making your GIF…");
             await Task.Run(() => GifMaker.Save(recording, path));
-            ClipboardOutput.CopyFile(path);
+            if (copy) ClipboardOutput.CopyFile(path);
             if (_settings.PlaySound) _sound.Play();
 
             long bytes = new FileInfo(path).Length;
-            var caption = $"GIF copied and saved  ·  {recording.TotalMs / 1000.0:0.0} s  ·  {bytes / 1048576.0:0.0} MB";
+            var caption = $"GIF {(copy ? "copied and saved" : "saved")}  ·  {recording.TotalMs / 1000.0:0.0} s  ·  {bytes / 1048576.0:0.0} MB";
             if (mp4Saved) caption += "  ·  MP4 too";
             else if (_settings.SaveMp4) caption += "  ·  MP4 failed";
             if (recording.StoppedEarly) caption += "  ·  stopped early (memory limit)";
@@ -430,6 +445,41 @@ internal sealed class TrayApp : ApplicationContext
             GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
             GC.Collect();
         }
+    }
+
+    /// <summary>
+    /// Opens the editor on a GIF's first frame, then puts what was drawn onto every frame.
+    /// Returns what was picked (Cancel throws the GIF away).
+    /// </summary>
+    private async Task<EditAction> EditGif(Recording recording, Rectangle monitor, Rectangle box)
+    {
+        using var first = FirstFrame(recording);
+        using var picture = GifAnnotator.EditorPicture(first, monitor.Size, box);
+        using var doc = new EditDocument(picture);
+        EditOutcome outcome;
+        using (var editor = new EditorOverlay(doc, monitor, box, forGif: true))
+        {
+            bool HookEscape() => Hotkey.TryParse("Escape", out var esc) && _hotkeys.Register(EscapeId, esc);
+            _cancelSelection = () => editor.Key(Keys.Escape);
+            HookEscape();
+            editor.DialogOpen += open =>
+            {
+                if (open) _hotkeys.Unregister(EscapeId);
+                else HookEscape();
+            };
+            try
+            {
+                outcome = await editor.RunAsync();
+            }
+            finally
+            {
+                _cancelSelection = null;
+                _hotkeys.Unregister(EscapeId);
+            }
+        }
+        if (outcome.Action != EditAction.Cancel)
+            await Task.Run(() => GifAnnotator.Apply(recording, doc.Items, monitor.Size, box));
+        return outcome.Action;
     }
 
     /// <summary>

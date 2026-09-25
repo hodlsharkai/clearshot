@@ -18,6 +18,7 @@ Windows may say it "protected your PC" because the app isn't code-signed. Click 
 | Alt + Shift + C | Drag a box around the part you want. Esc or right-click cancels. |
 | Alt + Shift + E | Drag a box, then draw on it before copying or saving (see below). |
 | Alt + G | Records a GIF: drag a box, then press Alt + G again, Esc, or Stop to finish. Up to 15 seconds. |
+| Alt + Shift + G | Records a GIF, then opens it in the editor: text, arrows, emoji and pixelation go on every frame. |
 
 All four can be changed in the ClearShot window (click the tray icon). Screenshots go to `Pictures\ClearShot` unless you pick another folder.
 

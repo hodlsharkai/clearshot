@@ -359,6 +359,28 @@ public class EditorOverlayTests
     }
 
     [Fact]
+    public void Editing_a_gif_keeps_the_recorded_area_fixed()
+    {
+        OnUiThread(() =>
+        {
+            using var doc = new EditDocument(new Bitmap(800, 600));
+            using var editor = new EditorOverlay(doc, Monitor, new Rectangle(100, 100, 300, 200), forGif: true) { TakeFocus = false };
+            var run = editor.RunAsync();
+            Pump();
+            var dummy = new Control();
+            editor.PointerDown(new Point(Monitor.X + 400, Monitor.Y + 200), MouseButtons.Left); // right edge
+            editor.PointerMove(new Point(Monitor.X + 450, Monitor.Y + 200), dummy);
+            editor.PointerUp();
+            editor.PointerDown(new Point(Monitor.X + 200, Monitor.Y + 200), MouseButtons.Left); // inside, no tool
+            editor.PointerMove(new Point(Monitor.X + 250, Monitor.Y + 260), dummy);
+            editor.PointerUp();
+            Assert.Equal(new Rectangle(100, 100, 300, 200), editor.Area);
+            editor.Finish(EditAction.Done);
+            Assert.Equal(EditAction.Done, run.Result.Action);
+        });
+    }
+
+    [Fact]
     public void Steps_number_themselves_as_you_click()
     {
         OnUiThread(() =>
@@ -739,5 +761,68 @@ public class EmojiDrawableTests
         // "couple with heart: woman, man": Windows shows two faces and a heart squeezed together, not one picture.
         Assert.False(EmojiRenderer.DrawsAsOne("\U0001F469\u200D\u2764\uFE0F\u200D\U0001F468"));
         Assert.All(EmojiCatalog.All, e => Assert.True(EmojiRenderer.DrawsAsOne(e.Emoji), e.Name));
+    }
+}
+
+public class GifEditingTests
+{
+    private static ClearShot.Capture.Recording FakeGif(int frames, int w, int h)
+    {
+        var list = new List<ClearShot.Capture.RecordedFrame>();
+        for (int f = 0; f < frames; f++)
+        {
+            var bgra = new byte[w * h * 4];
+            for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+            {
+                int i = (y * w + x) * 4;
+                byte v = (byte)((x % 2 == 0) ? 40 + f * 30 : 200); // stripes, a different shade each frame
+                bgra[i] = v; bgra[i + 1] = v; bgra[i + 2] = v; bgra[i + 3] = 255;
+            }
+            list.Add(new ClearShot.Capture.RecordedFrame(bgra, 66));
+        }
+        return new ClearShot.Capture.Recording(list, w, h);
+    }
+
+    private static Color Pixel(ClearShot.Capture.Recording r, int f, int x, int y)
+    {
+        int i = (y * r.Width + x) * 4;
+        var b = r.Frames[f].Bgra;
+        return Color.FromArgb(b[i + 3], b[i + 2], b[i + 1], b[i]);
+    }
+
+    [Fact]
+    public void Drawings_go_on_every_frame_scaled_to_the_gif_and_pixelate_works_per_frame()
+    {
+        // A 400 × 300 monitor; the GIF recorded the area (100, 50, 200 × 120) and shrank it to 100 × 60.
+        var monitor = new Size(400, 300);
+        var area = new Rectangle(100, 50, 200, 120);
+        var gif = FakeGif(3, 100, 60);
+        var drawings = new List<Annotation>
+        {
+            new RectangleShape { Color = Color.Red, Size = 6, Start = new(120, 70), End = new(280, 150) },
+            new PixelateBox { Start = new(200, 100), End = new(260, 140), BlockSize = 20 },
+        };
+        var eraser = new EraserStroke { Size = 12 };
+        eraser.Points.AddRange([new(110, 110), new(130, 110)]); // rubs out part of the rectangle's left edge
+        drawings.Add(eraser);
+
+        GifAnnotator.Apply(gif, drawings, monitor, area);
+
+        for (int f = 0; f < 3; f++)
+        {
+            // Rectangle's top edge (image y = 70) lands at gif y = (70 - 50) / 2 = 10, x = (200 - 100) / 2 = 50.
+            var top = Pixel(gif, f, 50, 10);
+            Assert.True(top.R > 180 && top.G < 90, $"frame {f}: no red edge, got {top}");
+            // Left edge at image x = 120 → gif x 10; erased around image y 110 → gif y 30.
+            var erased = Pixel(gif, f, 10, 30);
+            Assert.False(erased.R > 180 && erased.G < 90, $"frame {f}: the eraser didn't remove the edge");
+            // Pixelated block (gif 50..80, 25..45): neighbouring stripe pixels made equal.
+            Assert.Equal(Pixel(gif, f, 60, 35).ToArgb(), Pixel(gif, f, 61, 35).ToArgb());
+            // Outside: stripes untouched.
+            Assert.NotEqual(Pixel(gif, f, 20, 56).ToArgb(), Pixel(gif, f, 21, 56).ToArgb()); // below the rectangle
+        }
+        // Each frame keeps its own shade under the pixelation (it's worked out per frame, not copied from frame 1).
+        Assert.NotEqual(Pixel(gif, 0, 60, 35).ToArgb(), Pixel(gif, 2, 60, 35).ToArgb());
     }
 }

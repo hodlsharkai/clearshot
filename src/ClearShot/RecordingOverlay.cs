@@ -56,7 +56,16 @@ internal sealed class RecordingOverlay : IDisposable
     {
         _tick.Stop();
         _outline.Hide();
+        _pill?.Show();
         _pill?.ShowStatus(what);
+    }
+
+    /// <summary>Out of the way while the GIF is being edited.</summary>
+    public void Hide()
+    {
+        _tick.Stop();
+        _outline.Hide();
+        _pill?.Hide();
     }
 
     public void Dispose()
