@@ -47,7 +47,19 @@ internal sealed class EditorOverlay : IDisposable
     private Point? _pointer;
 
     public Tool Tool { get; private set; } = Tool.None;
-    public Color Colour { get; private set; } = Palette[0].Color;
+    // Each tool keeps its own colour (highlighter yellow, the rest red to start with), so there's one colour box
+    // but switching tools doesn't mean switching colours back. Kept while ClearShot runs.
+    private static readonly Dictionary<Tool, Color> ToolColours = new()
+    {
+        [Tool.Highlighter] = Palette[2].Color,
+    };
+    private static Color _lastColour = Palette[0].Color;
+
+    /// <summary>The colour the current tool draws in.</summary>
+    public Color Colour => ToolColours.TryGetValue(Tool, out var c) ? c : Tool == Tool.None ? _lastColour : Palette[0].Color;
+
+    // The last thing drawn: a new colour picked with that same tool recolours it too.
+    private Annotation? _lastDrawn;
     public float StrokeSize { get; private set; }
     public float TextSize { get; private set; }
     public string FontName { get; private set; } = "Segoe UI";
@@ -97,7 +109,7 @@ internal sealed class EditorOverlay : IDisposable
             new("Font and bold", Icons.Font, ShowFonts),
             ToolItem(Tool.Step, "Numbered steps (N)", Icons.Step),
             ToolItem(Tool.Pixelate, "Pixelate: hide names, emails, addresses (B)", Icons.Pixelate),
-            new("Colour", Icons.Colour(() => Colour), ShowColours, SeparatorBefore: true),
+            new("Colour: for this tool, and recolours what you just drew with it", Icons.Colour(() => _typing?.Color ?? Colour), ShowColours, SeparatorBefore: true),
             new("Undo (Ctrl+Z)", Icons.Undo, _ => Undo()),
         ]);
         _actions = new ToolBar(vertical: false, _scale,
@@ -288,6 +300,7 @@ internal sealed class EditorOverlay : IDisposable
             case Tool.Step:
                 var step = new StepMarker { Color = Colour, Size = StrokeSize, Centre = at, Number = _doc.NextStepNumber };
                 _doc.Add(step);
+                _lastDrawn = step;
                 InvalidateImage(step.Bounds);
                 break;
             case Tool.Text:
@@ -359,7 +372,7 @@ internal sealed class EditorOverlay : IDisposable
             PixelateBox x => x.Area.Width >= 2 && x.Area.Height >= 2,
             _ => true,
         };
-        if (worthKeeping) _doc.Add(done);
+        if (worthKeeping) { _doc.Add(done); _lastDrawn = done; }
         InvalidateImage(done.Bounds);
     }
 
@@ -516,7 +529,7 @@ internal sealed class EditorOverlay : IDisposable
         _typing = null;
         _textDrag = TextDrag.None;
         UpdateHint();
-        if (note.Text.Trim().Length > 0) _doc.Add(note);
+        if (note.Text.Trim().Length > 0) { _doc.Add(note); _lastDrawn = note; }
         InvalidateImage(note.Bounds);
     }
 
@@ -537,12 +550,39 @@ internal sealed class EditorOverlay : IDisposable
         if (!changed.IsEmpty) InvalidateImage(changed);
     }
 
+    /// <summary>
+    /// Sets the current tool's colour. It also recolours the text being typed, or the last thing drawn if it
+    /// was drawn with this same tool (draw an arrow, pick a colour, the arrow changes).
+    /// </summary>
     internal void SetColour(Color colour)
     {
-        Colour = colour;
-        if (_typing is not null) { _typing.Color = colour; InvalidateImage(_typing.Bounds); }
+        var tool = _typing is not null ? Tool.Text : Tool;
+        if (tool != Tool.None) ToolColours[tool] = colour;
+        _lastColour = colour;
+        if (_typing is not null)
+        {
+            _typing.Color = colour;
+            InvalidateImage(_typing.Bounds);
+        }
+        else if (_lastDrawn is not null && ToolOf(_lastDrawn) == tool && _doc.Items.Contains(_lastDrawn))
+        {
+            _doc.Recolour(_lastDrawn, colour);
+            InvalidateImage(_lastDrawn.Bounds);
+        }
         _tools.Invalidate();
     }
+
+    private static Tool ToolOf(Annotation item) => item switch
+    {
+        Stroke { Highlighter: true } => Tool.Highlighter,
+        Stroke => Tool.Pen,
+        LineShape { Arrow: true } => Tool.Arrow,
+        LineShape => Tool.Line,
+        RectangleShape => Tool.Rectangle,
+        StepMarker => Tool.Step,
+        TextNote => Tool.Text,
+        _ => Tool.Pixelate,
+    };
 
     private void ShowColours(Rectangle button)
     {

@@ -388,6 +388,42 @@ public class TextEditingTests
     }
 
     [Fact]
+    public void One_colour_box_remembers_per_tool_and_recolours_what_you_just_drew()
+    {
+        OnUiThread(() =>
+        {
+            using var doc = new EditDocument(new Bitmap(800, 600));
+            using var editor = new EditorOverlay(doc, Monitor, new Rectangle(0, 0, 800, 600)) { TakeFocus = false };
+            var run = editor.RunAsync();
+            Application.DoEvents();
+            var blue = EditorOverlay.Palette[4].Color;
+            var green = EditorOverlay.Palette[3].Color;
+
+            editor.PickTool(Tool.Highlighter);
+            Assert.Equal(EditorOverlay.Palette[2].Color, editor.Colour); // highlighter starts yellow
+
+            editor.PickTool(Tool.Arrow);
+            editor.PointerDown(S(100, 100), MouseButtons.Left);
+            editor.PointerMove(S(300, 200), new Control());
+            editor.PointerUp();
+            var arrow = doc.Items.OfType<LineShape>().Single();
+            editor.SetColour(blue);
+            Assert.Equal(blue.ToArgb(), arrow.Color.ToArgb()); // the arrow just drawn changes
+            Assert.True(doc.Baked.GetPixel(200, 150).B > 150);
+
+            // Another tool: picking a colour there leaves the arrow alone, and each tool keeps its own.
+            editor.PickTool(Tool.Rectangle);
+            editor.SetColour(green);
+            Assert.Equal(blue.ToArgb(), arrow.Color.ToArgb());
+            editor.PickTool(Tool.Arrow);
+            Assert.Equal(blue.ToArgb(), editor.Colour.ToArgb());
+            editor.PickTool(Tool.Rectangle);
+            Assert.Equal(green.ToArgb(), editor.Colour.ToArgb());
+            editor.Finish(EditAction.Cancel);
+        });
+    }
+
+    [Fact]
     public void Missing_font_falls_back_instead_of_failing()
     {
         var note = new TextNote { Text = "x", Size = 20, FontName = "No Such Font 123" };

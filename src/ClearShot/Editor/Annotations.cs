@@ -279,6 +279,14 @@ internal sealed class EditDocument : IDisposable
         item.Draw(g, Baked);
     }
 
+    /// <summary>Gives a finished drawing a new colour.</summary>
+    public void Recolour(Annotation item, Color colour)
+    {
+        if (!_items.Contains(item)) return;
+        item.Color = colour;
+        Rebake();
+    }
+
     /// <summary>Takes a drawing back out (to edit a piece of text again, for example).</summary>
     public void Remove(Annotation item)
     {
