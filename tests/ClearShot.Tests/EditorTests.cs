@@ -307,6 +307,17 @@ public class EditorOverlayTests
             Assert.Same(sticker, editor.Selected);
             editor.Wheel(120);
             Assert.True(sticker.Size > size);
+            // Scrolling over an emoji resizes it with no selection, whatever the tool.
+            editor.Key(Keys.Escape); // deselect
+            editor.PickTool(Tool.Arrow);
+            editor.PointerMove(new Point(Monitor.X + 200, Monitor.Y + 200), new Control());
+            float before = sticker.Size;
+            editor.Wheel(120);
+            Assert.True(sticker.Size > before);
+            editor.PickTool(Tool.None);
+            editor.PointerDown(new Point(Monitor.X + 200, Monitor.Y + 200), MouseButtons.Left);
+            editor.PointerUp();
+            Assert.Same(sticker, editor.Selected);
             editor.PickEmoji(EmojiRenderer.Quick[16]);
             Assert.Equal(EmojiRenderer.Quick[16], doc.Items.OfType<EmojiSticker>().Single().Emoji);
             editor.Undo();
@@ -696,5 +707,37 @@ public class HelpFormTests
         t.SetApartmentState(ApartmentState.STA);
         t.Start(); t.Join();
         if (failure is not null) throw failure;
+    }
+}
+
+public class EmojiCatalogTests
+{
+    [Fact]
+    public void Full_standard_set_loads_grouped_and_searchable_without_flags_windows_cannot_draw()
+    {
+        var all = EmojiCatalog.All;
+        Assert.InRange(all.Count, 1500, 2000);
+        Assert.Contains(all, e => e.Emoji == "\U0001F525" && e.Name == "fire");
+        Assert.Contains(all, e => e.Emoji == "\U0001F3C1"); // chequered flag: Windows draws it
+        Assert.DoesNotContain(all, e => e.Name == "flag: United Kingdom"); // country flags show as letters on Windows
+        Assert.Equal(9, all.Select(e => e.Group).Distinct().Count());
+        Assert.Contains(EmojiCatalog.Search("thumbs"), e => e.Emoji == "\U0001F44D");
+        Assert.Contains(EmojiCatalog.Search("heart red"), e => e.Name == "red heart");
+        Assert.Empty(EmojiCatalog.Search("zzqqxx"));
+    }
+}
+
+public class EmojiDrawableTests
+{
+    [Fact]
+    public void Single_emoji_draw_as_one_and_the_picker_hides_combinations_windows_splits()
+    {
+        Assert.True(EmojiRenderer.DrawsAsOne("\U0001F525"));             // fire
+        Assert.True(EmojiRenderer.DrawsAsOne("❤️"));           // red heart
+        Assert.True(EmojiRenderer.DrawsAsOne("\U0001F3F3️‍\U0001F308")); // rainbow flag (a combination Windows has)
+        Assert.False(EmojiRenderer.DrawsAsOne("\U0001F525\U0001F525"));  // two emoji side by side
+        // "couple with heart: woman, man": Windows shows two faces and a heart squeezed together, not one picture.
+        Assert.False(EmojiRenderer.DrawsAsOne("\U0001F469\u200D\u2764\uFE0F\u200D\U0001F468"));
+        Assert.All(EmojiCatalog.All, e => Assert.True(EmojiRenderer.DrawsAsOne(e.Emoji), e.Name));
     }
 }

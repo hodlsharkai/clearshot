@@ -90,4 +90,31 @@ public class EditorLookTests
         t.Start(); t.Join();
         if (failure is not null) throw failure;
     }
+
+    /// <summary>Renders the emoji picker, optionally searched. Set CLEARSHOT_PICKER_LOOK=out.png;search</summary>
+    [Fact]
+    public void Render_emoji_picker()
+    {
+        var spec = Environment.GetEnvironmentVariable("CLEARSHOT_PICKER_LOOK");
+        if (string.IsNullOrEmpty(spec)) return;
+        var parts = spec.Split(';');
+        Exception? failure = null;
+        var t = new Thread(() =>
+        {
+            try
+            {
+                using var picker = new EmojiPicker(1.25f) { StartPosition = FormStartPosition.Manual, Location = new Point(-30000, -30000) };
+                picker.Show();
+                if (parts.Length > 1 && parts[1].Length > 0) picker.Controls.OfType<TextBox>().Single().Text = parts[1];
+                for (int i = 0; i < 5; i++) { Application.DoEvents(); Thread.Sleep(20); }
+                using var bmp = new Bitmap(picker.Width, picker.Height);
+                picker.DrawToBitmap(bmp, new Rectangle(Point.Empty, picker.Size));
+                bmp.Save(parts[0]);
+            }
+            catch (Exception ex) { failure = ex; }
+        });
+        t.SetApartmentState(ApartmentState.STA);
+        t.Start(); t.Join();
+        if (failure is not null) throw failure;
+    }
 }

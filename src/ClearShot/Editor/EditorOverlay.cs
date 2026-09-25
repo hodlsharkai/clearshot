@@ -45,6 +45,7 @@ internal sealed class EditorOverlay : IDisposable
     private Point _gripStart;
     private Rectangle _areaAtGrip;
     private Point? _pointer;
+    private Point? _mouse; // where the mouse is over the picture, for scrolling over an emoji
 
     public Tool Tool { get; private set; } = Tool.None;
     // Each tool keeps its own colour (highlighter yellow, the rest red to start with), so there's one colour box
@@ -429,6 +430,7 @@ internal sealed class EditorOverlay : IDisposable
     internal void PointerMove(Point screen, Control source)
     {
         var p = ToImage(screen);
+        _mouse = _area.Contains(p) ? p : null;
         if (_grip != Grip.None)
         {
             SetArea(Resized(p));
@@ -549,6 +551,15 @@ internal sealed class EditorOverlay : IDisposable
     internal void Wheel(int delta)
     {
         int steps = Math.Sign(delta);
+        // Scrolling over an emoji resizes it, whatever tool is picked, with no need to select it first.
+        if (_selected is null && _typing is null && _mouse is Point over
+            && _doc.Items.LastOrDefault(i => i is EmojiSticker && i.Hit(over, 0)) is EmojiSticker hovered)
+        {
+            var before = hovered.Bounds;
+            _doc.Resize(hovered, Math.Clamp(hovered.Size * (steps > 0 ? 1.1f : 1 / 1.1f), 8, 2000));
+            InvalidateImage(Rectangle.Union(before, hovered.Bounds));
+            return;
+        }
         if (_selected is not null && _typing is null)
         {
             var before = _selected.Bounds;
@@ -837,19 +848,20 @@ internal sealed class EditorOverlay : IDisposable
         menu.Show(new Point(button.Right, button.Top));
     }
 
-    /// <summary>A grid of emoji under the smiley button: click one to use it (or swap the selected sticker for it).</summary>
+    /// <summary>The emoji picker beside the smiley button: search, categories, every standard emoji.</summary>
     private void ShowEmoji(Rectangle button)
     {
-        var drop = new ToolStripDropDown { Padding = Padding.Empty };
-        var grid = new EmojiGrid(_scale);
-        grid.Picked += e =>
+        var picker = new EmojiPicker(_scale);
+        picker.Picked += PickEmoji;
+        // Esc belongs to the picker while it's open (it's caught system-wide for the editor otherwise).
+        DialogOpen?.Invoke(true);
+        picker.FormClosed += (_, _) =>
         {
-            drop.Close();
-            PickEmoji(e);
+            DialogOpen?.Invoke(false);
+            picker.Dispose();
+            _canvas.BeginInvoke(() => { _canvas.Activate(); TakeForeground(_canvas.Handle); });
         };
-        drop.Items.Add(new ToolStripControlHost(grid) { Padding = Padding.Empty, Margin = Padding.Empty, AutoSize = false, Size = grid.Size });
-        drop.Closed += (_, _) => _canvas.BeginInvoke(() => { _canvas.Activate(); drop.Dispose(); });
-        drop.Show(new Point(button.Right, button.Top));
+        picker.ShowNear(button, _canvas);
     }
 
     internal void PickEmoji(string emoji)
@@ -865,65 +877,6 @@ internal sealed class EditorOverlay : IDisposable
             return;
         }
         if (Tool != Tool.Emoji) PickTool(Tool.Emoji);
-    }
-
-    /// <summary>The emoji picker's grid: 8 across, each drawn in colour.</summary>
-    private sealed class EmojiGrid : Control
-    {
-        private const int Columns = 8;
-        private readonly int _cell;
-        private int _hover = -1;
-        public event Action<string>? Picked;
-
-        public EmojiGrid(float scale)
-        {
-            _cell = (int)Math.Round(40 * scale);
-            int rows = (EmojiRenderer.Quick.Length + Columns - 1) / Columns;
-            Size = new Size(Columns * _cell + 8, rows * _cell + 8);
-            DoubleBuffered = true;
-            BackColor = ToolBar.Background;
-            Cursor = Cursors.Hand;
-        }
-
-        private int IndexAt(Point p)
-        {
-            int col = (p.X - 4) / _cell, row = (p.Y - 4) / _cell;
-            int i = row * Columns + col;
-            return col is >= 0 and < Columns && row >= 0 && i < EmojiRenderer.Quick.Length ? i : -1;
-        }
-
-        protected override void OnPaint(PaintEventArgs e)
-        {
-            var g = e.Graphics;
-            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-            for (int i = 0; i < EmojiRenderer.Quick.Length; i++)
-            {
-                var cell = new Rectangle(4 + i % Columns * _cell, 4 + i / Columns * _cell, _cell, _cell);
-                if (i == _hover)
-                {
-                    using var hover = new SolidBrush(ToolBar.Hover);
-                    g.FillRectangle(hover, cell);
-                }
-                float size = _cell * 0.62f;
-                var picture = EmojiRenderer.Render(EmojiRenderer.Quick[i], size);
-                int box = EmojiRenderer.BoxFor(size);
-                g.DrawImage(picture, cell.X + (cell.Width - box) / 2, cell.Y + (cell.Height - box) / 2, box, box);
-            }
-        }
-
-        protected override void OnMouseMove(MouseEventArgs e)
-        {
-            base.OnMouseMove(e);
-            int i = IndexAt(e.Location);
-            if (i != _hover) { _hover = i; Invalidate(); }
-        }
-
-        protected override void OnMouseUp(MouseEventArgs e)
-        {
-            base.OnMouseUp(e);
-            int i = IndexAt(e.Location);
-            if (i >= 0) Picked?.Invoke(EmojiRenderer.Quick[i]);
-        }
     }
 
     /// <summary>Opens the font list: each font shown in its own typeface, plus bold and every installed font.</summary>

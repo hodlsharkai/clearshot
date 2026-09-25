@@ -31,6 +31,7 @@
     <EmbeddedResource Include="..\..\assets\clearshot.ico" LogicalName="clearshot.ico" />
     <EmbeddedResource Include="..\..\assets\hdr-other-apps.jpg" LogicalName="hdr-other-apps.jpg" />
     <EmbeddedResource Include="..\..\assets\hdr-clearshot.jpg" LogicalName="hdr-clearshot.jpg" />
+    <EmbeddedResource Include="..\..\assets\emoji.txt" LogicalName="emoji.txt" />
   </ItemGroup>
 
   <ItemGroup>

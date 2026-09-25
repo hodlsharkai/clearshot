@@ -43,6 +43,46 @@ internal static class EmojiRenderer
         }
     }
 
+    /// <summary>A fresh picture the caller owns (the picker keeps its own set at its own size).</summary>
+    public static Bitmap RenderUncached(string emoji, float size)
+    {
+        lock (Gate) return Draw(emoji, Math.Clamp((int)Math.Round(size), 6, 2048));
+    }
+
+    /// <summary>
+    /// True if Windows' emoji font draws this as one picture. Some combinations (certain couples and families) aren't in
+    /// the font and come out as separate pieces side by side; the picker leaves those out.
+    /// </summary>
+    public static bool DrawsAsOne(string emoji)
+    {
+        lock (Gate)
+        {
+            _dwrite ??= DWrite.DWriteCreateFactory<IDWriteFactory>();
+            _measure ??= _dwrite.CreateTextFormat("Segoe UI Emoji", null, FontWeight.Normal, Vortice.DirectWrite.FontStyle.Normal, FontStretch.Normal, 32, "en-gb");
+            using var layout = _dwrite.CreateTextLayout(emoji, _measure, 1000, 100);
+            if (layout.Metrics.Width > 32 * 1.5f) return false;
+            // A combination the font really has is one glyph; one it doesn't is drawn as several glyphs squeezed
+            // together (two faces and a heart). Count the glyphs DirectWrite would draw.
+            var counter = new GlyphCounter();
+            layout.Draw(IntPtr.Zero, counter, 0, 0);
+            return counter.Glyphs <= 1;
+        }
+    }
+
+    private static IDWriteTextFormat? _measure;
+
+    /// <summary>Counts the glyphs a layout draws, without drawing anything.</summary>
+    private sealed class GlyphCounter : TextRendererBase
+    {
+        public int Glyphs;
+
+        public override void DrawGlyphRun(IntPtr clientDrawingContext, float baselineOriginX, float baselineOriginY,
+            Vortice.DCommon.MeasuringMode measuringMode, GlyphRun glyphRun, GlyphRunDescription glyphRunDescription, SharpGen.Runtime.IUnknown clientDrawingEffect)
+        {
+            Glyphs += glyphRun.Indices?.Length ?? 0;
+        }
+    }
+
     public static int BoxFor(float size) => (int)Math.Ceiling(Math.Clamp(size, 6, 2048) * 1.3f);
 
     private static Bitmap Draw(string emoji, int px)

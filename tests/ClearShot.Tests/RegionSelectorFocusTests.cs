@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 
 namespace ClearShot.Tests;
 
+[Collection("Editor windows")] // real windows shown on screen take turns (they check who has focus)
 public class RegionSelectorFocusTests
 {
     /// <summary>
@@ -24,7 +25,8 @@ public class RegionSelectorFocusTests
 
                 Assert.True(selector.Visible);
                 Assert.NotEqual(selector.Handle, GetForegroundWindow());
-                Assert.Equal(before, GetForegroundWindow());
+                // Only ClearShot's own windows are checked: you using the PC while tests run can change the active window.
+                Assert.NotEqual(GetWindowThreadProcessId(GetForegroundWindow(), out _), GetCurrentThreadId());
                 Assert.NotEqual(0, GetWindowLong(selector.Handle, -20) & 0x08000000); // WS_EX_NOACTIVATE
 
                 selector.Cancel();
@@ -52,7 +54,8 @@ public class RegionSelectorFocusTests
                 using var live = new LiveRegionSelector(new Rectangle(-30000, -30000, 300, 200));
                 var picking = live.SelectAsync();
                 for (int i = 0; i < 10; i++) { Application.DoEvents(); Thread.Sleep(20); }
-                Assert.Equal(before, GetForegroundWindow());
+                // Only ClearShot's own windows are checked: you using the PC while tests run can change the active window.
+                Assert.NotEqual(GetWindowThreadProcessId(GetForegroundWindow(), out _), GetCurrentThreadId());
                 live.Cancel();
                 Application.DoEvents();
                 Assert.True(picking.IsCompleted);
@@ -66,5 +69,7 @@ public class RegionSelectorFocusTests
     }
 
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
+    [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
     [DllImport("user32.dll")] private static extern int GetWindowLong(IntPtr hwnd, int index);
 }
