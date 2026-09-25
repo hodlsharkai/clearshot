@@ -153,12 +153,12 @@ internal sealed class SettingsForm : Form
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         footer.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         var links = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Anchor = AnchorStyles.Left, Margin = Padding.Empty };
-        var help = new LinkLabel { Text = "How to use", AutoSize = true, Margin = new Padding(3, 3, 16, 3) };
+        var help = new LinkLabel { Text = "How to use", AutoSize = true, Margin = new Padding(3, 0, 16, 0) };
         help.LinkClicked += (_, _) => HelpForm.ShowFor(_settings, this);
         links.Controls.Add(help);
         if (AppInfo.ActiveDonations.Count > 0)
         {
-            var donate = new LinkLabel { Text = "Buy me a beer", AutoSize = true };
+            var donate = new LinkLabel { Text = "Buy me a beer", AutoSize = true, Margin = new Padding(3, 0, 3, 0) };
             donate.LinkClicked += (_, _) => DonateForm.ShowFor(AppInfo.ActiveDonations, this);
             links.Controls.Add(donate);
         }

@@ -564,6 +564,11 @@ public class HelpFormTests
                 // Reachable: a "How to use" link in the main window.
                 using var settingsForm = new SettingsForm(new Settings());
                 Assert.Contains(All(settingsForm).OfType<LinkLabel>(), l => l.Text == "How to use");
+                // The footer links sit on one line (25/09: "How to use" was 3 px lower than "Buy me a beer").
+                settingsForm.CreateControl();
+                settingsForm.PerformLayout();
+                var tops = All(settingsForm).OfType<LinkLabel>().Select(l => l.Top).Distinct().ToList();
+                Assert.Single(tops);
             }
             catch (Exception ex) { failure = ex; }
         });
