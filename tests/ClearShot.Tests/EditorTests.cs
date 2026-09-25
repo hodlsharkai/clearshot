@@ -914,3 +914,55 @@ public class EditorSpeedTests
         Assert.True(ms < 8, $"eraser took {ms:0.0} ms per repaint");
     }
 }
+
+[Collection("Editor windows")]
+public class KeyboardGrabTests
+{
+    [DllImport("user32.dll", SetLastError = true)] private static extern uint SendInput(uint count, Input[] inputs, int size);
+    [StructLayout(LayoutKind.Sequential)] private struct Input { public uint Type; public KeyboardInput Ki; public long Pad; }
+    [StructLayout(LayoutKind.Sequential)] private struct KeyboardInput { public ushort Vk, Scan; public uint Flags, Time; public IntPtr Extra; }
+
+    /// <summary>25/09: typing went to the app behind while the editor waited. Keys must reach the editor whatever has focus.</summary>
+    [Fact]
+    public void Real_key_presses_reach_the_editor_and_not_the_app_behind()
+    {
+        Exception? failure = null;
+        var t = new Thread(() =>
+        {
+            try
+            {
+                var seen = new List<Keys>();
+                using var grab = new KeyboardGrab(k => { seen.Add(k); return true; }, _ => { });
+                Assert.True(grab.Active);
+                // F13: a key real keyboards don't have, so nothing else reacts if this ever fails.
+                var inputs = new[]
+                {
+                    new Input { Type = 1, Ki = new KeyboardInput { Vk = 0x7C } },
+                    new Input { Type = 1, Ki = new KeyboardInput { Vk = 0x7C, Flags = 2 } },
+                };
+                Assert.Equal(2u, SendInput(2, inputs, Marshal.SizeOf<Input>()));
+                for (int i = 0; i < 30 && seen.Count == 0; i++) { Application.DoEvents(); Thread.Sleep(10); }
+                Assert.Contains(Keys.F13, seen);
+
+                // Paused (a dialog open): keys go past it.
+                seen.Clear();
+                grab.Paused = true;
+                SendInput(2, inputs, Marshal.SizeOf<Input>());
+                for (int i = 0; i < 20; i++) { Application.DoEvents(); Thread.Sleep(10); }
+                Assert.Empty(seen);
+            }
+            catch (Exception ex) { failure = ex; }
+        });
+        t.SetApartmentState(ApartmentState.STA);
+        t.Start(); t.Join();
+        if (failure is not null) throw failure;
+    }
+
+    [Fact]
+    public void Keys_turn_into_the_characters_this_keyboard_types()
+    {
+        Assert.Equal("a", KeyboardGrab.Characters(0x41, 0x1E)); // A, no Shift
+        Assert.Equal("1", KeyboardGrab.Characters(0x31, 0x02));
+        Assert.Equal(" ", KeyboardGrab.Characters(0x20, 0x39));
+    }
+}

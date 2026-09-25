@@ -155,6 +155,15 @@ internal sealed class EditorOverlay : IDisposable
     /// <summary>Raised with true while a colour or font dialog is open (so Esc goes to the dialog), then false.</summary>
     internal event Action<bool>? DialogOpen;
 
+    // Catches the keyboard while the editor is open (see KeyboardGrab); paused while a dialog needs typing.
+    private KeyboardGrab? _grab;
+
+    private void SetDialogOpen(bool open)
+    {
+        if (_grab is not null) _grab.Paused = open;
+        DialogOpen?.Invoke(open);
+    }
+
     private enum TextDrag { None, Move, Resize }
     private TextDrag _textDrag;
     private PointF _textDragStart, _textOriginAtStart;
@@ -241,6 +250,8 @@ internal sealed class EditorOverlay : IDisposable
         {
             _canvas.Activate();
             TakeForeground(_canvas.Handle);
+            // Every key comes here while the editor is open, whichever window Windows gave the keyboard to.
+            _grab = new KeyboardGrab(Key, TypeChar);
         }
         return _result.Task;
     }
@@ -860,9 +871,9 @@ internal sealed class EditorOverlay : IDisposable
         menu.Items.Add("More colours…", null, (_, _) =>
         {
             using var dialog = new ColorDialog { Color = Colour, FullOpen = true, AnyColor = true };
-            DialogOpen?.Invoke(true);
+            SetDialogOpen(true);
             try { if (dialog.ShowDialog(_canvas) == DialogResult.OK) SetColour(dialog.Color); }
-            finally { DialogOpen?.Invoke(false); }
+            finally { SetDialogOpen(false); }
             _canvas.Activate();
         });
         menu.Closed += (_, _) =>
@@ -878,10 +889,10 @@ internal sealed class EditorOverlay : IDisposable
         var picker = new EmojiPicker(_scale);
         picker.Picked += PickEmoji;
         // Esc belongs to the picker while it's open (it's caught system-wide for the editor otherwise).
-        DialogOpen?.Invoke(true);
+        SetDialogOpen(true);
         picker.FormClosed += (_, _) =>
         {
-            DialogOpen?.Invoke(false);
+            SetDialogOpen(false);
             picker.Dispose();
             _canvas.BeginInvoke(() => { _canvas.Activate(); TakeForeground(_canvas.Handle); });
         };
@@ -924,9 +935,9 @@ internal sealed class EditorOverlay : IDisposable
         {
             using var dialog = new FontDialog { ShowEffects = false, ShowColor = false, FontMustExist = true };
             try { dialog.Font = new Font(FontName, 12f, Bold ? FontStyle.Bold : FontStyle.Regular); } catch (ArgumentException) { }
-            DialogOpen?.Invoke(true);
+            SetDialogOpen(true);
             try { if (dialog.ShowDialog(_canvas) == DialogResult.OK) SetFont(dialog.Font.FontFamily.Name, dialog.Font.Bold); }
-            finally { DialogOpen?.Invoke(false); }
+            finally { SetDialogOpen(false); }
             _canvas.Activate();
         });
         menu.Closed += (_, _) => _canvas.BeginInvoke(() => { _canvas.Activate(); menu.Dispose(); });
@@ -972,6 +983,8 @@ internal sealed class EditorOverlay : IDisposable
     internal void Finish(EditAction action)
     {
         if (_result.Task.IsCompleted) return;
+        _grab?.Dispose();
+        _grab = null;
         CommitText();
         _drawing = null;
         _tools.Hide();
@@ -1084,6 +1097,7 @@ internal sealed class EditorOverlay : IDisposable
 
     public void Dispose()
     {
+        _grab?.Dispose();
         _tools.Dispose();
         _actions.Dispose();
         _canvas.Dispose();

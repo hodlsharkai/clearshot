@@ -19,34 +19,28 @@ internal static class EmojiRenderer
         "🔥", "💯", "✅", "❌", "⚠️", "❓", "❗", "💡", "⭐", "❤️", "💀", "🎉", "🚀", "💰", "📌", "👉",
     ];
 
-    private static readonly object Gate = new();
-    private static ID2D1Factory? _d2d;
-    private static IDWriteFactory? _dwrite;
-    private static IWICImagingFactory? _wic;
-    private static readonly Dictionary<(string, int), Bitmap> Cache = [];
+    // Each thread gets its own Direct2D, DirectWrite and WIC objects, so the background preparation of the emoji
+    // list never makes the editor wait (they're not shared, so nothing needs locking).
+    [ThreadStatic] private static ID2D1Factory? _d2d;
+    [ThreadStatic] private static IDWriteFactory? _dwrite;
+    [ThreadStatic] private static IWICImagingFactory? _wic;
+    [ThreadStatic] private static IDWriteTextFormat? _measure;
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(string, int), Bitmap> Cache = new();
 
     /// <summary>The emoji on a transparent square about 1.3 × <paramref name="size"/> across. Cached; don't dispose it.</summary>
     public static Bitmap Render(string emoji, float size)
     {
         int px = Math.Clamp((int)Math.Round(size), 6, 2048);
-        lock (Gate)
-        {
-            if (Cache.TryGetValue((emoji, px), out var cached)) return cached;
-            if (Cache.Count > 64)
-            {
-                foreach (var old in Cache.Values) old.Dispose();
-                Cache.Clear();
-            }
-            var bitmap = Draw(emoji, px);
-            Cache[(emoji, px)] = bitmap;
-            return bitmap;
-        }
+        if (Cache.TryGetValue((emoji, px), out var cached)) return cached;
+        // Stickers being resized leave old sizes behind; don't let them pile up.
+        if (Cache.Count > 64) Cache.Clear();
+        return Cache.GetOrAdd((emoji, px), k => Draw(k.Item1, k.Item2));
     }
 
     /// <summary>A fresh picture the caller owns (the picker keeps its own set at its own size).</summary>
     public static Bitmap RenderUncached(string emoji, float size)
     {
-        lock (Gate) return Draw(emoji, Math.Clamp((int)Math.Round(size), 6, 2048));
+        return Draw(emoji, Math.Clamp((int)Math.Round(size), 6, 2048));
     }
 
     /// <summary>
@@ -55,21 +49,16 @@ internal static class EmojiRenderer
     /// </summary>
     public static bool DrawsAsOne(string emoji)
     {
-        lock (Gate)
-        {
-            _dwrite ??= DWrite.DWriteCreateFactory<IDWriteFactory>();
-            _measure ??= _dwrite.CreateTextFormat("Segoe UI Emoji", null, FontWeight.Normal, Vortice.DirectWrite.FontStyle.Normal, FontStretch.Normal, 32, "en-gb");
-            using var layout = _dwrite.CreateTextLayout(emoji, _measure, 1000, 100);
-            if (layout.Metrics.Width > 32 * 1.5f) return false;
-            // A combination the font really has is one glyph; one it doesn't is drawn as several glyphs squeezed
-            // together (two faces and a heart). Count the glyphs DirectWrite would draw.
-            var counter = new GlyphCounter();
-            layout.Draw(IntPtr.Zero, counter, 0, 0);
-            return counter.Glyphs <= 1;
-        }
+        _dwrite ??= DWrite.DWriteCreateFactory<IDWriteFactory>();
+        _measure ??= _dwrite.CreateTextFormat("Segoe UI Emoji", null, FontWeight.Normal, Vortice.DirectWrite.FontStyle.Normal, FontStretch.Normal, 32, "en-gb");
+        using var layout = _dwrite.CreateTextLayout(emoji, _measure, 1000, 100);
+        if (layout.Metrics.Width > 32 * 1.5f) return false;
+        // A combination the font really has is one glyph; one it doesn't is drawn as several glyphs squeezed
+        // together (two faces and a heart). Count the glyphs DirectWrite would draw.
+        var counter = new GlyphCounter();
+        layout.Draw(IntPtr.Zero, counter, 0, 0);
+        return counter.Glyphs <= 1;
     }
-
-    private static IDWriteTextFormat? _measure;
 
     /// <summary>Counts the glyphs a layout draws, without drawing anything.</summary>
     private sealed class GlyphCounter : TextRendererBase
