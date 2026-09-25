@@ -997,10 +997,16 @@ internal sealed class EditorOverlay : IDisposable
 
     // ---- Painting -----------------------------------------------------------------------------------
 
+    /// <summary>
+    /// How far past a drawing's bounds anything of it can be painted: the selection outline (2 px out, 3 px pen) and the
+    /// corner squares centred on its corners. Redrawing less than this left trails behind a dragged emoji.
+    /// </summary>
+    internal int RepaintMargin => _handle + 6;
+
     private void InvalidateImage(Rectangle image)
     {
         if (image.IsEmpty) return;
-        image.Inflate(2, 2);
+        image.Inflate(RepaintMargin, RepaintMargin);
         _canvas.Invalidate(new Rectangle(image.X - _area.X + _pad, image.Y - _area.Y + _pad, image.Width, image.Height));
     }
 

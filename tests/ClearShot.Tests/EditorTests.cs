@@ -403,6 +403,37 @@ public class EditorOverlayTests
         });
     }
 
+    /// <summary>
+    /// 25/09: dragging a big emoji left ghost outlines behind: the repaint was smaller than the selection box and its
+    /// corner square. Everything drawn for a selected item must fall inside what's repainted when it moves.
+    /// </summary>
+    [Fact]
+    public void Repainting_covers_the_selection_box_and_corner_square()
+    {
+        OnUiThread(() =>
+        {
+            using var doc = new EditDocument(new Bitmap(800, 600));
+            using var editor = new EditorOverlay(doc, Monitor, new Rectangle(0, 0, 800, 600)) { TakeFocus = false };
+            var run = editor.RunAsync();
+            Pump();
+            editor.Key(Keys.E);
+            editor.PointerDown(new Point(Monitor.X + 300, Monitor.Y + 300), MouseButtons.Left);
+            editor.PointerUp();
+            for (int i = 0; i < 12; i++) editor.Wheel(120); // a big emoji
+            var sticker = doc.Items.OfType<EmojiSticker>().Single();
+            var painted = sticker.Bounds;
+            painted.Inflate(2 + 2, 2 + 2); // the outline: 2 px out, 3 px pen (half each side), rounded up
+            var corner = new RectangleF(sticker.Box.Right - 20, sticker.Box.Bottom - 20, 40, 40); // generous corner square
+            var repainted = sticker.Bounds;
+            repainted.Inflate(editor.RepaintMargin, editor.RepaintMargin);
+            Assert.True(repainted.Contains(painted), "outline outside the repaint");
+            float half = (editor.RepaintMargin - 6) / 2f; // the corner square's half-width
+            var square = new RectangleF(sticker.Box.Right - half - 1, sticker.Box.Bottom - half - 1, half * 2 + 2, half * 2 + 2);
+            Assert.True(repainted.Contains(Rectangle.Ceiling(square)), "corner square outside the repaint");
+            editor.Finish(EditAction.Cancel);
+        });
+    }
+
     [Fact]
     public void Editing_a_gif_keeps_the_recorded_area_fixed()
     {
