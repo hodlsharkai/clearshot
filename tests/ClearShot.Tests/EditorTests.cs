@@ -493,6 +493,50 @@ public class TextEditingTests
     }
 
     [Fact]
+    public void Dragging_an_arrow_end_makes_it_longer_and_a_rectangle_corner_resizes_it()
+    {
+        OnUiThread(() =>
+        {
+            using var doc = new EditDocument(new Bitmap(800, 600));
+            using var editor = new EditorOverlay(doc, Monitor, new Rectangle(0, 0, 800, 600)) { TakeFocus = false };
+            var run = editor.RunAsync();
+            Application.DoEvents();
+            var dummy = new Control();
+            void Drag(int x1, int y1, int x2, int y2)
+            {
+                editor.PointerDown(S(x1, y1), MouseButtons.Left);
+                editor.PointerMove(S(x2, y2), dummy);
+                editor.PointerUp();
+            }
+            editor.PickTool(Tool.Arrow);
+            Drag(100, 100, 200, 100);
+            editor.PickTool(Tool.Rectangle);
+            Drag(300, 300, 400, 400);
+            var arrow = doc.Items.OfType<LineShape>().Single();
+            var box = doc.Items.OfType<RectangleShape>().Single();
+
+            editor.PickTool(Tool.None);
+            Drag(150, 100, 150, 100); // select the arrow
+            Drag(200, 100, 500, 250); // drag its tip
+            Assert.Equal(new PointF(100, 100), arrow.Start);
+            Assert.Equal(new PointF(500, 250), arrow.End);
+            Assert.Same(arrow, doc.Items[0]);
+
+            Drag(300, 350, 300, 350); // select the rectangle by its edge
+            Assert.Same(box, editor.Selected);
+            Drag(400, 300, 450, 250); // top-right corner out
+            Assert.Equal(new PointF(300, 250), box.Start);
+            Assert.Equal(new PointF(450, 400), box.End);
+
+            editor.Undo();
+            Assert.Equal((new PointF(300, 300), new PointF(400, 400)), (box.Start, box.End));
+            editor.Undo();
+            Assert.Equal(new PointF(200, 100), arrow.End);
+            editor.Finish(EditAction.Cancel);
+        });
+    }
+
+    [Fact]
     public void Missing_font_falls_back_instead_of_failing()
     {
         var note = new TextNote { Text = "x", Size = 20, FontName = "No Such Font 123" };

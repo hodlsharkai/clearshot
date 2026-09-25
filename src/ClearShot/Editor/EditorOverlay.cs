@@ -67,6 +67,76 @@ internal sealed class EditorOverlay : IDisposable
     private PointF _moveLast, _moveTotal;
 
     public Annotation? Selected => _selected;
+
+    // Dragging one end of a selected line/arrow, or one corner of a selected rectangle/pixelate box.
+    private int _endDrag = -1;
+    private PointF _shapeStartBefore, _shapeEndBefore;
+
+    /// <summary>
+    /// The squares on a selected drawing that reshape it: both ends of a line or arrow, the four corners of a
+    /// rectangle or pixelate box. Steps, text and pen strokes have none (scroll resizes them).
+    /// </summary>
+    private static PointF[] EndsOf(Annotation? item) => item switch
+    {
+        LineShape l => [l.Start, l.End],
+        RectangleShape r => Corners(r.Start, r.End),
+        PixelateBox x => Corners(x.Start, x.End),
+        _ => [],
+    };
+
+    private static PointF[] Corners(PointF a, PointF b) => [a, new(b.X, a.Y), b, new(a.X, b.Y)];
+
+    private int EndAt(Point p)
+    {
+        var ends = EndsOf(_selected);
+        float reach = _handle / 2f + _gripReach;
+        for (int i = 0; i < ends.Length; i++)
+            if (Math.Abs(ends[i].X - p.X) <= reach && Math.Abs(ends[i].Y - p.Y) <= reach) return i;
+        return -1;
+    }
+
+    private void MoveEnd(int index, PointF to)
+    {
+        switch (_selected)
+        {
+            case LineShape l:
+                if (index == 0) l.Start = to; else l.End = to;
+                break;
+            case RectangleShape r:
+                (r.Start, r.End) = MoveCorner(r.Start, r.End, index, to);
+                break;
+            case PixelateBox x:
+                (x.Start, x.End) = MoveCorner(x.Start, x.End, index, to);
+                break;
+        }
+    }
+
+    // Corners go a, (b.X, a.Y), b, (a.X, b.Y): each moves the coordinates it's made of.
+    private static (PointF, PointF) MoveCorner(PointF a, PointF b, int index, PointF to) => index switch
+    {
+        0 => (to, b),
+        1 => (new PointF(a.X, to.Y), new PointF(to.X, b.Y)),
+        2 => (a, to),
+        _ => (new PointF(to.X, a.Y), new PointF(b.X, to.Y)),
+    };
+
+    private static (PointF, PointF) ShapePoints(Annotation item) => item switch
+    {
+        LineShape l => (l.Start, l.End),
+        RectangleShape r => (r.Start, r.End),
+        PixelateBox x => (x.Start, x.End),
+        _ => (PointF.Empty, PointF.Empty),
+    };
+
+    private static void SetShapePoints(Annotation item, PointF start, PointF end)
+    {
+        switch (item)
+        {
+            case LineShape l: l.Start = start; l.End = end; break;
+            case RectangleShape r: r.Start = start; r.End = end; break;
+            case PixelateBox x: x.Start = start; x.End = end; break;
+        }
+    }
     public float StrokeSize { get; private set; }
     public float TextSize { get; private set; }
     public string FontName { get; private set; } = "Segoe UI";
@@ -277,6 +347,14 @@ internal sealed class EditorOverlay : IDisposable
         }
 
         var grip = HitTest(p);
+        if (Tool == Tool.None && _selected is not null && EndAt(p) is var end and >= 0)
+        {
+            _endDrag = end;
+            (_shapeStartBefore, _shapeEndBefore) = ShapePoints(_selected);
+            _moving = _selected;
+            _movingIndex = _doc.Lift(_selected);
+            return;
+        }
         if (Tool == Tool.None && grip is Grip.None or Grip.Move && _area.Contains(p))
         {
             var hit = _doc.HitTest(p, Math.Max(4, 5 * _scale));
@@ -346,6 +424,13 @@ internal sealed class EditorOverlay : IDisposable
             DragText(p);
             return;
         }
+        if (_moving is not null && _endDrag >= 0)
+        {
+            var before = _moving.Bounds;
+            MoveEnd(_endDrag, p);
+            InvalidateImage(Rectangle.Inflate(Rectangle.Union(before, _moving.Bounds), _handle, _handle));
+            return;
+        }
         if (_moving is not null)
         {
             var before = _moving.Bounds;
@@ -354,6 +439,11 @@ internal sealed class EditorOverlay : IDisposable
             _moveLast = p;
             _moveTotal = new PointF(_moveTotal.X + dx, _moveTotal.Y + dy);
             InvalidateImage(Rectangle.Union(before, _moving.Bounds));
+            return;
+        }
+        if (Tool == Tool.None && _selected is not null && EndAt(p) >= 0)
+        {
+            source.Cursor = Cursors.Cross;
             return;
         }
         if (Tool == Tool.None && _area.Contains(p) && HitTest(p) is Grip.Move or Grip.None && _doc.HitTest(p, Math.Max(4, 5 * _scale)) is not null)
@@ -394,6 +484,17 @@ internal sealed class EditorOverlay : IDisposable
     internal void PointerUp()
     {
         _textDrag = TextDrag.None;
+        if (_moving is not null && _endDrag >= 0)
+        {
+            var shaped = _moving;
+            _moving = null;
+            _endDrag = -1;
+            _doc.Drop(shaped, _movingIndex, 0, 0);
+            var (oldStart, oldEnd) = (_shapeStartBefore, _shapeEndBefore);
+            if (ShapePoints(shaped) != (oldStart, oldEnd)) _doc.Record(() => SetShapePoints(shaped, oldStart, oldEnd));
+            _canvas.Invalidate();
+            return;
+        }
         if (_moving is not null)
         {
             var moved = _moving;
@@ -751,6 +852,7 @@ internal sealed class EditorOverlay : IDisposable
 
     private void UpdateHint() => _hint.SetText(
         _typing is not null ? "Typing  ·  drag the corner square to resize  ·  Esc or click outside to finish"
+        : _selected is LineShape or RectangleShape or PixelateBox ? "Selected  ·  drag a square to reshape  ·  drag to move  ·  scroll: thickness  ·  Delete: remove  ·  Esc: deselect"
         : _selected is not null ? "Selected  ·  drag to move  ·  scroll: size  ·  colour box: recolour  ·  Delete: remove  ·  Esc: deselect"
         : "Enter: copy and save  ·  Esc or right-click: close  ·  Scroll: size");
 
@@ -814,6 +916,14 @@ internal sealed class EditorOverlay : IDisposable
             using var accent = new Pen(ToolBar.Accent, 1.5f) { DashStyle = DashStyle.Dash };
             g.DrawRectangle(dark, b);
             g.DrawRectangle(accent, b);
+            // Squares on the ends / corners: drag them to reshape.
+            using var squareEdge = new Pen(Color.FromArgb(15, 23, 42));
+            foreach (var e in EndsOf(_selected))
+            {
+                var square = new RectangleF(e.X - _handle / 2f, e.Y - _handle / 2f, _handle, _handle);
+                g.FillRectangle(Brushes.White, square);
+                g.DrawRectangle(squareEdge, square.X, square.Y, square.Width, square.Height);
+            }
         }
         if (_typing is not null)
         {

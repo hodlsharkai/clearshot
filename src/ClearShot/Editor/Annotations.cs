@@ -386,6 +386,9 @@ internal sealed class EditDocument : IDisposable
         Rebake();
     }
 
+    /// <summary>Remembers how to take back a change made directly to a drawing (dragging an arrow's end, say).</summary>
+    public void Record(Action undo) => _undo.Push(undo);
+
     /// <summary>Takes a drawing out while it's dragged. Returns its place in the stack, for <see cref="Drop"/>.</summary>
     public int Lift(Annotation item)
     {
