@@ -1131,7 +1131,19 @@ internal sealed class EditorOverlay : IDisposable
 
         protected override void OnPaintBackground(PaintEventArgs e) { }
 
-        protected override void OnPaint(PaintEventArgs e) => _owner.Paint(e.Graphics);
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            // One failed paint makes Windows Forms give up on a window for good (a white box with a red X), so a
+            // drawing problem is logged and the rest of the editor keeps working.
+            try
+            {
+                _owner.Paint(e.Graphics);
+            }
+            catch (Exception ex)
+            {
+                Log.Write($"Editor paint failed: {ex}");
+            }
+        }
 
         protected override void OnMouseDown(MouseEventArgs e)
         {

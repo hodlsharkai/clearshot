@@ -80,6 +80,22 @@ public class AnnotationTests
         Assert.Equal(doc.Baked.GetPixel(40, 28).ToArgb(), doc.Baked.GetPixel(41, 28).ToArgb());
     }
 
+    /// <summary>25/09: pressing and moving 0 px gave the eraser two identical points; GDI+'s Widen threw and the editor
+    /// turned into a white box with a red X.</summary>
+    [Theory]
+    [InlineData(new float[] { 40, 28, 40, 28 })]
+    [InlineData(new float[] { 40, 28, 40, 28, 40, 28 })]
+    [InlineData(new float[] { 40, 28, 40, 28, 80, 28, 80, 28 })]
+    public void Eraser_survives_repeated_points(float[] xy)
+    {
+        using var doc = new EditDocument(new Bitmap(120, 60, PixelFormat.Format32bppArgb));
+        var eraser = new EraserStroke { Size = 10, Original = doc.Original };
+        for (int i = 0; i < xy.Length; i += 2) eraser.Points.Add(new PointF(xy[i], xy[i + 1]));
+        doc.Add(eraser); // draws it: must not throw
+        using var g = Graphics.FromImage(doc.Baked);
+        eraser.Draw(g, doc.Baked);
+    }
+
     [Fact]
     public void Steps_count_up_and_undo_takes_them_back()
     {

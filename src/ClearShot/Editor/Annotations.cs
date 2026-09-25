@@ -67,14 +67,28 @@ internal sealed class EraserStroke : Annotation
     internal GraphicsPath Shape()
     {
         var path = new GraphicsPath();
-        if (Points.Count == 1)
+        // Repeated points (press, then a move of 0 px) make GDI+'s Widen fail, so drop them first.
+        var points = new List<PointF>(Points.Count);
+        foreach (var p in Points)
+            if (points.Count == 0 || Math.Abs(points[^1].X - p.X) > 0.01f || Math.Abs(points[^1].Y - p.Y) > 0.01f)
+                points.Add(p);
+        if (points.Count == 1)
         {
-            path.AddEllipse(Points[0].X - Size / 2, Points[0].Y - Size / 2, Size, Size);
+            path.AddEllipse(points[0].X - Size / 2, points[0].Y - Size / 2, Size, Size);
             return path;
         }
-        path.AddLines(Points.ToArray());
-        using var pen = new Pen(Color.Black, Size) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
-        path.Widen(pen);
+        path.AddLines(points.ToArray());
+        try
+        {
+            using var pen = new Pen(Color.Black, Size) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
+            path.Widen(pen);
+        }
+        catch (System.Runtime.InteropServices.ExternalException)
+        {
+            // Still refused: fall back to round dabs along the stroke, which always works.
+            path.Reset();
+            foreach (var p in points) path.AddEllipse(p.X - Size / 2, p.Y - Size / 2, Size, Size);
+        }
         return path;
     }
 
