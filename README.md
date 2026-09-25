@@ -41,6 +41,8 @@ In the ClearShot window, under **GIFs**:
 - **Standard** (default): up to 960 px wide at 15 fps. Small files, ideal for Discord.
 - **High**: up to 1920 px wide at 30 fps. Bigger files.
 - For game and video footage, tick **Also save an MP4**: GIFs are limited to 256 colours per frame, MP4s aren't.
+
+ClearShot has its own GIF encoder, built for smooth, steady animation of screen and game footage: pixels that haven't changed are left alone (so still areas can't flicker), each frame gets its own palette with extra room for dark shades and always a true black, and redrawn pixels are gently error-diffusion dithered. On dark game footage it was tested against gifski (maximum quality) and FFmpeg and had the fewest blotches and a quarter of FFmpeg's flicker, at a similar file size.
 - **Also save an MP4**: saves an MP4 next to the GIF, in full colour and much smaller. The GIF is still what gets copied.
 
 ## Download
@@ -89,4 +91,4 @@ Only send each coin to its matching network. The same addresses, with QR codes, 
 
 MIT
 
-ClearShot uses [ImageSharp](https://github.com/SixLabors/ImageSharp) to write GIFs, licensed to this open-source project under the Apache License 2.0 (Six Labors Split License), plus [Vortice.Windows](https://github.com/amerkoleci/Vortice.Windows) (MIT) and [QRCoder](https://github.com/codebude/QRCoder) (MIT).
+ClearShot uses [ImageSharp](https://github.com/SixLabors/ImageSharp) to choose GIF palettes, licensed to this open-source project under the Apache License 2.0 (Six Labors Split License), plus [Vortice.Windows](https://github.com/amerkoleci/Vortice.Windows) (MIT) and [QRCoder](https://github.com/codebude/QRCoder) (MIT).

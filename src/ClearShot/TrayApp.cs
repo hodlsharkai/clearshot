@@ -251,7 +251,7 @@ internal sealed class TrayApp : ApplicationContext
             Recording recording;
             try
             {
-                recording = await new RegionRecorder(hmonitor, box, fps, maxWidth, GifMaxLength).RunAsync(_gifStop.Token);
+                recording = await new RegionRecorder(hmonitor, box, fps, maxWidth, GifMaxLength, FrameMemoryBudget()).RunAsync(_gifStop.Token);
             }
             finally
             {
@@ -302,6 +302,16 @@ internal sealed class TrayApp : ApplicationContext
             GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
             GC.Collect();
         }
+    }
+
+    /// <summary>
+    /// How much memory a recording may use for frames: a quarter of what's available, between 2 and 12 GB.
+    /// A full 15 s High clip needs about 8 GB, so this fits it on well-equipped PCs and stops early elsewhere.
+    /// </summary>
+    private static long FrameMemoryBudget()
+    {
+        long available = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
+        return Math.Clamp(available / 4, 2L << 30, 12L << 30);
     }
 
     private static Bitmap FirstFrame(Recording recording)
