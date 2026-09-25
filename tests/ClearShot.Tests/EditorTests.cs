@@ -359,6 +359,51 @@ public class EditorOverlayTests
     }
 
     [Fact]
+    public void A_placed_emoji_stays_in_hand_to_drag_or_resize_like_text()
+    {
+        OnUiThread(() =>
+        {
+            using var doc = new EditDocument(new Bitmap(800, 600));
+            using var editor = new EditorOverlay(doc, Monitor, new Rectangle(0, 0, 800, 600)) { TakeFocus = false };
+            var run = editor.RunAsync();
+            Pump();
+            var dummy = new Control();
+            void Drag(float x1, float y1, float x2, float y2)
+            {
+                editor.PointerDown(new Point(Monitor.X + (int)x1, Monitor.Y + (int)y1), MouseButtons.Left);
+                editor.PointerMove(new Point(Monitor.X + (int)x2, Monitor.Y + (int)y2), dummy);
+                editor.PointerUp();
+            }
+            editor.Key(Keys.E);
+            Drag(200, 200, 200, 200);
+            var first = doc.Items.OfType<EmojiSticker>().Single();
+            Assert.Same(first, editor.Selected); // in hand straight away
+
+            // Drag it by its middle: it moves (no second emoji).
+            Drag(200, 200, 300, 250);
+            Assert.Single(doc.Items.OfType<EmojiSticker>());
+            Assert.Equal(new PointF(300, 250), first.Centre);
+
+            // Drag its corner square: it gets bigger; Ctrl+Z puts the size back.
+            float size = first.Size;
+            var box = first.Box;
+            Drag(box.Right, box.Bottom, box.Right + 60, box.Bottom + 60);
+            Assert.True(first.Size > size * 1.5f, $"size {size} -> {first.Size}");
+            editor.Undo();
+            Assert.Equal(size, first.Size);
+
+            // Click empty space: another emoji, now in hand; picking from the picker sets the next one, no swap.
+            Drag(600, 400, 600, 400);
+            Assert.Equal(2, doc.Items.OfType<EmojiSticker>().Count());
+            editor.PickEmoji(EmojiRenderer.Quick[16]);
+            Assert.All(doc.Items.OfType<EmojiSticker>(), e => Assert.Equal(EmojiRenderer.Quick[0], e.Emoji));
+            Drag(100, 500, 100, 500);
+            Assert.Equal(EmojiRenderer.Quick[16], doc.Items.OfType<EmojiSticker>().Last().Emoji);
+            editor.Finish(EditAction.Cancel);
+        });
+    }
+
+    [Fact]
     public void Editing_a_gif_keeps_the_recorded_area_fixed()
     {
         OnUiThread(() =>
@@ -824,5 +869,48 @@ public class GifEditingTests
         }
         // Each frame keeps its own shade under the pixelation (it's worked out per frame, not copied from frame 1).
         Assert.NotEqual(Pixel(gif, 0, 60, 35).ToArgb(), Pixel(gif, 2, 60, 35).ToArgb());
+    }
+}
+
+public class EditorSpeedTests
+{
+    /// <summary>The emoji list must be ready before anyone scrolls it, and a screen of it must draw inside one frame.</summary>
+    [Fact]
+    public void Emoji_list_is_prepared_in_the_background_and_draws_within_a_frame()
+    {
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        EmojiPicker.WarmUp(1.25f);
+        int cell = (int)Math.Round(38 * 1.25f), px = (int)Math.Round(cell * 0.62f);
+        while (clock.Elapsed < TimeSpan.FromSeconds(20) && EmojiCatalog.All.Any(e => !EmojiPicker.Pictures.ContainsKey((e.Emoji, px))))
+            Thread.Sleep(50);
+        Console.WriteLine($"SPEED emoji warm-up {clock.Elapsed.TotalSeconds:0.0} s for {EmojiCatalog.All.Count}");
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(20), "warm-up took too long");
+
+        using var bmp = new Bitmap(10 * cell, 12 * cell);
+        using var g = Graphics.FromImage(bmp);
+        var paint = System.Diagnostics.Stopwatch.StartNew();
+        int i = 0;
+        foreach (var e in EmojiCatalog.All.Skip(600).Take(120))
+        {
+            g.DrawImage(EmojiPicker.Pictures[(e.Emoji, px)], i % 10 * cell, i / 10 * cell);
+            i++;
+        }
+        Console.WriteLine($"SPEED a screen of 120 emoji: {paint.Elapsed.TotalMilliseconds:0.0} ms");
+        Assert.True(paint.Elapsed.TotalMilliseconds < 16, "a screen of emoji took longer than one frame");
+    }
+
+    /// <summary>Erasing on a 4K screenshot repaints on every mouse move: it must be quick.</summary>
+    [Fact]
+    public void Erasing_on_a_4k_screenshot_is_quick()
+    {
+        using var doc = new EditDocument(new Bitmap(3840, 2160, PixelFormat.Format32bppArgb));
+        var stroke = new EraserStroke { Size = 30, Original = doc.Original };
+        for (int x = 0; x < 200; x += 5) stroke.Points.Add(new PointF(1000 + x, 1000));
+        using var g = Graphics.FromImage(doc.Baked);
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        for (int n = 0; n < 20; n++) stroke.Draw(g, doc.Baked);
+        double ms = clock.Elapsed.TotalMilliseconds / 20;
+        Console.WriteLine($"SPEED eraser stroke on 4K: {ms:0.00} ms");
+        Assert.True(ms < 8, $"eraser took {ms:0.0} ms per repaint");
     }
 }

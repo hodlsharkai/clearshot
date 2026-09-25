@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Drawing.Drawing2D;
 
 namespace ClearShot.Editor;
@@ -7,10 +8,10 @@ internal static class EmojiCatalog
 {
     internal sealed record Entry(string Group, string Emoji, string Name);
 
-    private static IReadOnlyList<Entry>? _all;
+    private static readonly Lazy<IReadOnlyList<Entry>> _all = new(() => Load().Where(e => EmojiRenderer.DrawsAsOne(e.Emoji)).ToList());
 
     /// <summary>Every emoji this PC can draw as one picture.</summary>
-    public static IReadOnlyList<Entry> All => _all ??= Load().Where(e => EmojiRenderer.DrawsAsOne(e.Emoji)).ToList();
+    public static IReadOnlyList<Entry> All => _all.Value;
 
     public static IReadOnlyList<Entry> Parse(string text, bool windowsCanDraw = true)
     {
@@ -75,10 +76,41 @@ internal sealed class EmojiPicker : Form
 
     public event Action<string>? Picked;
 
+    // Every emoji picture the picker shows, drawn once. Filled in the background when the editor opens, so
+    // scrolling through the list never stops to draw.
+    internal static readonly ConcurrentDictionary<(string, int), Bitmap> Pictures = new();
+    private static readonly ConcurrentDictionary<int, bool> Warmed = new();
+
+    private static int CellFor(float scale) => (int)Math.Round(38 * scale);
+
+    /// <summary>Starts drawing all the picker's emoji in the background (once per display scaling).</summary>
+    public static void WarmUp(float scale)
+    {
+        int cell = CellFor(scale);
+        if (!Warmed.TryAdd(cell, true)) return;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                int gridPx = (int)Math.Round(cell * 0.62f), buttonPx = (int)Math.Round(cell * 0.55f);
+                foreach (var e in EmojiRenderer.Quick) Pictures.GetOrAdd((e, gridPx), k => EmojiRenderer.RenderUncached(k.Item1, k.Item2));
+                foreach (var group in EmojiCatalog.All.GroupBy(e => e.Group))
+                    Pictures.GetOrAdd((group.First().Emoji, buttonPx), k => EmojiRenderer.RenderUncached(k.Item1, k.Item2));
+                foreach (var entry in EmojiCatalog.All)
+                    Pictures.GetOrAdd((entry.Emoji, gridPx), k => EmojiRenderer.RenderUncached(k.Item1, k.Item2));
+            }
+            catch (Exception ex)
+            {
+                Log.Write($"Emoji warm-up stopped: {ex.Message}");
+            }
+        }) { IsBackground = true, Priority = ThreadPriority.BelowNormal, Name = "Emoji warm-up" };
+        thread.Start();
+    }
+
     public EmojiPicker(float scale)
     {
         _scale = scale;
-        int cell = (int)Math.Round(38 * scale), pad = (int)Math.Round(8 * scale);
+        int cell = CellFor(scale), pad = (int)Math.Round(8 * scale);
         FormBorderStyle = FormBorderStyle.None;
         StartPosition = FormStartPosition.Manual;
         ShowInTaskbar = false;
@@ -272,18 +304,11 @@ internal sealed class EmojiPicker : Form
             }
         }
 
-        private static readonly Dictionary<(string, int), Bitmap> Pictures = [];
-
-        /// <summary>Draws one emoji centred in <paramref name="cell"/>; the picker keeps its own copies at its own size.</summary>
+        /// <summary>Draws one emoji centred in <paramref name="cell"/>, at the size it was drawn (no resampling).</summary>
         internal static void DrawEmoji(Graphics g, string emoji, Rectangle cell, float size)
         {
             int px = (int)Math.Round(size);
-            if (!Pictures.TryGetValue((emoji, px), out var picture))
-            {
-                picture = EmojiRenderer.RenderUncached(emoji, px);
-                Pictures[(emoji, px)] = picture;
-            }
-            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            var picture = Pictures.GetOrAdd((emoji, px), k => EmojiRenderer.RenderUncached(k.Item1, k.Item2));
             g.DrawImage(picture, cell.X + (cell.Width - picture.Width) / 2, cell.Y + (cell.Height - picture.Height) / 2, picture.Width, picture.Height);
         }
 

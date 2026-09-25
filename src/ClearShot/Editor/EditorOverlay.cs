@@ -82,6 +82,8 @@ internal sealed class EditorOverlay : IDisposable
         LineShape l => [l.Start, l.End],
         RectangleShape r => Corners(r.Start, r.End),
         PixelateBox x => Corners(x.Start, x.End),
+        // An emoji gets one square, on its box's bottom-right corner, to drag it bigger or smaller.
+        EmojiSticker e => [new PointF(e.Box.Right, e.Box.Bottom)],
         _ => [],
     };
 
@@ -109,6 +111,11 @@ internal sealed class EditorOverlay : IDisposable
             case PixelateBox x:
                 (x.Start, x.End) = MoveCorner(x.Start, x.End, index, to);
                 break;
+            case EmojiSticker e:
+                // The emoji stays centred; the corner sets how big its box is.
+                float half = Math.Max(Math.Abs(to.X - e.Centre.X), Math.Abs(to.Y - e.Centre.Y));
+                e.Size = Math.Clamp(half * 2 / 1.3f, 8, 2000);
+                break;
         }
     }
 
@@ -126,6 +133,7 @@ internal sealed class EditorOverlay : IDisposable
         LineShape l => (l.Start, l.End),
         RectangleShape r => (r.Start, r.End),
         PixelateBox x => (x.Start, x.End),
+        EmojiSticker e => (new PointF(e.Size, 0), PointF.Empty), // an emoji's shape is just its size
         _ => (PointF.Empty, PointF.Empty),
     };
 
@@ -136,6 +144,7 @@ internal sealed class EditorOverlay : IDisposable
             case LineShape l: l.Start = start; l.End = end; break;
             case RectangleShape r: r.Start = start; r.End = end; break;
             case PixelateBox x: x.Start = start; x.End = end; break;
+            case EmojiSticker e: e.Size = start.X; break;
         }
     }
     public float StrokeSize { get; private set; }
@@ -170,6 +179,8 @@ internal sealed class EditorOverlay : IDisposable
         StrokeSize = Math.Max(2, (int)Math.Round(3 * _scale));
         TextSize = (int)Math.Round(22 * _scale);
 
+        // Get the emoji picker's pictures ready in the background, so opening and scrolling it never stutters.
+        EmojiPicker.WarmUp(_scale);
         _dim = new LiveRegionSelector.DimLayer(monitorBounds) { Cursor = Cursors.Default };
         _dim.MouseDown += (_, e) => PointerDown(_dim.PointToScreen(e.Location), e.Button);
         _dim.MouseMove += (_, e) => PointerMove(_dim.PointToScreen(e.Location), _dim);
@@ -357,7 +368,8 @@ internal sealed class EditorOverlay : IDisposable
         }
 
         var grip = HitTest(p);
-        if (Tool == Tool.None && _selected is not null && EndAt(p) is var end and >= 0)
+        bool emojiInHand = Tool == Tool.Emoji && _selected is EmojiSticker;
+        if ((Tool == Tool.None || emojiInHand) && _selected is not null && EndAt(p) is var end and >= 0)
         {
             _endDrag = end;
             (_shapeStartBefore, _shapeEndBefore) = ShapePoints(_selected);
@@ -365,9 +377,12 @@ internal sealed class EditorOverlay : IDisposable
             _movingIndex = _doc.Lift(_selected);
             return;
         }
-        if (Tool == Tool.None && grip is Grip.None or Grip.Move && _area.Contains(p))
+        if ((Tool == Tool.None || Tool == Tool.Emoji) && grip is Grip.None or Grip.Move && _area.Contains(p))
         {
-            var hit = _doc.HitTest(p, Math.Max(4, 5 * _scale));
+            // With the Emoji tool, clicking an emoji picks it up to drag; clicking empty space places a new one.
+            var hit = Tool == Tool.Emoji
+                ? _doc.Items.LastOrDefault(i => i is EmojiSticker && i.Hit(p, Math.Max(4, 5 * _scale)))
+                : _doc.HitTest(p, Math.Max(4, 5 * _scale));
             Select(hit);
             if (hit is not null)
             {
@@ -408,6 +423,8 @@ internal sealed class EditorOverlay : IDisposable
                 var sticker = new EmojiSticker { Emoji = Emoji, Size = EmojiSize, Centre = at };
                 _doc.Add(sticker);
                 _lastDrawn = sticker;
+                // It stays in hand, like text: a box with a corner square to drag it or resize it.
+                Select(sticker);
                 InvalidateImage(sticker.Bounds);
                 break;
             case Tool.Eraser:
@@ -463,12 +480,14 @@ internal sealed class EditorOverlay : IDisposable
             InvalidateImage(Rectangle.Union(before, _moving.Bounds));
             return;
         }
-        if (Tool == Tool.None && _selected is not null && EndAt(p) >= 0)
+        if ((Tool == Tool.None || Tool == Tool.Emoji) && _selected is not null && EndAt(p) >= 0)
         {
             source.Cursor = Cursors.Cross;
             return;
         }
-        if (Tool == Tool.None && _area.Contains(p) && HitTest(p) is Grip.Move or Grip.None && _doc.HitTest(p, Math.Max(4, 5 * _scale)) is not null)
+        bool overDrawing = Tool == Tool.None ? _doc.HitTest(p, Math.Max(4, 5 * _scale)) is not null
+            : Tool == Tool.Emoji && _doc.Items.Any(i => i is EmojiSticker && i.Hit(p, Math.Max(4, 5 * _scale)));
+        if ((Tool == Tool.None || Tool == Tool.Emoji) && _area.Contains(p) && HitTest(p) is Grip.Move or Grip.None && overDrawing)
         {
             source.Cursor = Cursors.SizeAll;
             return;
@@ -872,7 +891,9 @@ internal sealed class EditorOverlay : IDisposable
     internal void PickEmoji(string emoji)
     {
         Emoji = emoji;
-        if (_selected is EmojiSticker sticker)
+        // In Select mode, a selected emoji is swapped for the new one. With the Emoji tool, the new one is simply
+        // the next to place (the one just placed stays as it is).
+        if (_selected is EmojiSticker sticker && Tool == Tool.None)
         {
             // Swapping the emoji on a selected sticker: one step that Ctrl+Z takes back.
             var replacement = new EmojiSticker { Emoji = emoji, Size = sticker.Size, Centre = sticker.Centre };
@@ -881,6 +902,7 @@ internal sealed class EditorOverlay : IDisposable
             InvalidateImage(replacement.Bounds);
             return;
         }
+        Select(null);
         if (Tool != Tool.Emoji) PickTool(Tool.Emoji);
     }
 
@@ -938,6 +960,7 @@ internal sealed class EditorOverlay : IDisposable
 
     private void UpdateHint() => _hint.SetText(
         _typing is not null ? "Typing  ·  drag the corner square to resize  ·  Esc or click outside to finish"
+        : _selected is EmojiSticker ? "Emoji  \u00b7  drag it to move  \u00b7  drag the corner square (or scroll) to resize  \u00b7  Delete: remove  \u00b7  click elsewhere for another"
         : _selected is LineShape or RectangleShape or PixelateBox ? "Selected  ·  drag a square to reshape  ·  drag to move  ·  scroll: thickness  ·  Delete: remove  ·  Esc: deselect"
         : _selected is not null ? "Selected  ·  drag to move  ·  scroll: size  ·  colour box: recolour  ·  Delete: remove  ·  Esc: deselect"
         : Tool == Tool.Emoji ? "Emoji  ·  click to place it  ·  scroll: size  ·  the smiley button picks another"

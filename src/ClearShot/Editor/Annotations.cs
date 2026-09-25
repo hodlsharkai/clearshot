@@ -59,7 +59,7 @@ internal sealed class EmojiSticker : Annotation
     public PointF Centre { get; set; }
     public string Emoji { get; set; } = "😀";
 
-    private RectangleF Box
+    internal RectangleF Box
     {
         get
         {
@@ -70,12 +70,9 @@ internal sealed class EmojiSticker : Annotation
 
     public override void Draw(Graphics g, Bitmap target)
     {
+        // Drawn at the exact size it was rendered, so there's no resampling: quick to repaint while dragging.
         var picture = EmojiRenderer.Render(Emoji, Size);
-        var box = Box;
-        var state = g.Save();
-        g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-        g.DrawImage(picture, box.X, box.Y, box.Width, box.Height);
-        g.Restore(state);
+        g.DrawImage(picture, (int)Math.Round(Centre.X - picture.Width / 2f), (int)Math.Round(Centre.Y - picture.Height / 2f), picture.Width, picture.Height);
     }
 
     public override Rectangle Bounds => Grow(Box, 2);
@@ -136,7 +133,9 @@ internal sealed class EraserStroke : Annotation
         var state = g.Save();
         g.SetClip(shape, CombineMode.Intersect);
         g.CompositingMode = CompositingMode.SourceCopy;
-        g.DrawImage(Original, 0, 0, Original.Width, Original.Height);
+        // Only the part under the stroke, not the whole screenshot: this runs on every mouse move while erasing.
+        var part = Rectangle.Intersect(Bounds, new Rectangle(0, 0, Original.Width, Original.Height));
+        if (!part.IsEmpty) g.DrawImage(Original, part, part, GraphicsUnit.Pixel);
         g.Restore(state);
     }
 
@@ -326,8 +325,23 @@ internal sealed class TextNote : Annotation
         g.DrawString(Text, font, brush, Origin, StringFormat.GenericTypographic);
     }
 
+    // Measuring text is slow and happens on every repaint: keep the last answer until something changes.
+    private (string Text, float Size, string Font, bool Bold, PointF Origin, RectangleF Box, PointF Caret)? _measured;
+
     /// <summary>Where the text sits, and where the typing caret goes.</summary>
     public RectangleF Measure(out PointF caret)
+    {
+        if (_measured is { } m && m.Text == Text && m.Size == Size && m.Font == FontName && m.Bold == Bold && m.Origin == Origin)
+        {
+            caret = m.Caret;
+            return m.Box;
+        }
+        var box = MeasureNow(out caret);
+        _measured = (Text, Size, FontName, Bold, Origin, box, caret);
+        return box;
+    }
+
+    private RectangleF MeasureNow(out PointF caret)
     {
         using var font = MakeFont();
         using var scratch = new Bitmap(1, 1);

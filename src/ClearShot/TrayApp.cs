@@ -82,6 +82,11 @@ internal sealed class TrayApp : ApplicationContext
             await Capture(region: id == RegionId);
         };
         Task.Run(ScreenCapturer.WarmUp);
+        // Get the emoji picker's pictures ready well before anyone opens it (a few seconds of background work, once).
+        _ = Task.Delay(TimeSpan.FromSeconds(3)).ContinueWith(_ =>
+        {
+            foreach (var screen in Screen.AllScreens) Editor.EmojiPicker.WarmUp(Dpi.ScaleFor(screen.Bounds));
+        }, TaskScheduler.Default);
         _ = MediaPauser.WarmUpAsync();
         RegisterHotkeys(announceProblems: true);
 
