@@ -51,6 +51,14 @@ internal sealed class RecordingOverlay : IDisposable
         _tick.Start();
     }
 
+    /// <summary>Recording has finished: drop the outline and show that the file is being made.</summary>
+    public void ShowSaving(string what)
+    {
+        _tick.Stop();
+        _outline.Hide();
+        _pill?.ShowStatus(what);
+    }
+
     public void Dispose()
     {
         _tick.Dispose();
@@ -150,5 +158,11 @@ internal sealed class RecordingOverlay : IDisposable
 
         public void SetElapsed(TimeSpan elapsed, TimeSpan limit) =>
             _time.Text = $"●  REC  {elapsed:m\\:ss} / {limit:m\\:ss}";
+
+        public void ShowStatus(string text)
+        {
+            _stop.Visible = false;
+            _time.Text = text;
+        }
     }
 }

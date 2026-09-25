@@ -34,6 +34,14 @@ When your screen is in HDR, ClearShot can also save true HDR copies next to the 
 
 The normal PNG is still what gets copied to the clipboard, because most apps can't show HDR.
 
+## GIF quality
+
+In the ClearShot window, under **GIFs**:
+
+- **Standard** (default): up to 960 px wide at 15 fps. Small files, ideal for Discord.
+- **High**: up to 1920 px wide at 30 fps, with dithering to smooth colour banding in games and video. Bigger files.
+- **Also save an MP4**: saves an MP4 next to the GIF, in full colour and much smaller. The GIF is still what gets copied.
+
 ## Download
 
 **[Download the latest ClearShot.exe](https://github.com/hodlsharkai/ClearShot/releases/latest)** and run it. No installer and no admin rights needed.

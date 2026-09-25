@@ -10,12 +10,17 @@ namespace ClearShot.Capture;
 /// <summary>One frame of a recording: BGRA pixels at the output size, shown for <see cref="DurationMs"/>.</summary>
 internal sealed class RecordedFrame(byte[] bgra, int durationMs)
 {
-    public byte[] Bgra { get; } = bgra;
+    /// <summary>The pixels, until <see cref="Release"/> hands the memory back once they've been encoded.</summary>
+    public byte[] Bgra => _bgra ?? throw new InvalidOperationException("This frame has already been encoded and released.");
     public int DurationMs { get; set; } = durationMs;
+    private byte[]? _bgra = bgra;
+
+    public void Release() => _bgra = null;
 }
 
 /// <param name="Width">Output width (the area shrunk to fit the size limit).</param>
-internal sealed record Recording(IReadOnlyList<RecordedFrame> Frames, int Width, int Height)
+/// <param name="StoppedEarly">True if recording stopped because it hit the memory cap.</param>
+internal sealed record Recording(IReadOnlyList<RecordedFrame> Frames, int Width, int Height, bool StoppedEarly = false)
 {
     public int TotalMs => Frames.Sum(f => f.DurationMs);
 }
@@ -25,7 +30,8 @@ internal sealed record Recording(IReadOnlyList<RecordedFrame> Frames, int Width,
 /// copied off the graphics card each frame, so it stays smooth on 4K and HDR screens. Frames that didn't
 /// change are merged into the previous one, which keeps GIFs of mostly-still content small.
 /// </summary>
-internal sealed class RegionRecorder(IntPtr monitor, Rectangle area, int fps, int maxWidth, TimeSpan maxDuration)
+/// <param name="maxBytes">Memory cap for the frames; recording stops early (and says so) rather than run out.</param>
+internal sealed class RegionRecorder(IntPtr monitor, Rectangle area, int fps, int maxWidth, TimeSpan maxDuration, long maxBytes = 2L << 30)
 {
     public Task<Recording> RunAsync(CancellationToken stop) =>
         Task.Factory.StartNew(() => Run(stop), stop, TaskCreationOptions.LongRunning, TaskScheduler.Default);
@@ -72,21 +78,26 @@ internal sealed class RegionRecorder(IntPtr monitor, Rectangle area, int fps, in
         using (var duplication = output.DuplicateOutput1(device!, (uint)ScreenCapturer.SupportedFormats.Length, ScreenCapturer.SupportedFormats))
         {
             var frames = new List<RecordedFrame>();
+            var shownAt = new List<double>(); // when each distinct frame was captured, in ms from the start
             ID3D11Texture2D? staging = null;
             HdrToneMapper? toneMapper = null;
             byte[]? last = null;
             var poke = IntPtr.Zero;
             var clock = Stopwatch.StartNew();
             double frameMs = 1000.0 / fps;
-            long frameIndex = 0;
+            double dueMs = 0;
+            long bytesHeld = 0;
+            bool stoppedEarly = false;
             try
             {
                 while (!stop.IsCancellationRequested && clock.Elapsed < maxDuration)
                 {
-                    // Wait for this frame's moment, then take whatever the screen shows right now.
-                    double dueMs = frameIndex * frameMs;
+                    // Wait for this frame's moment, then take whatever the screen shows right now. If a frame took
+                    // longer than its slot (a big HDR area), skip ahead rather than try to catch up: timings come
+                    // from when frames were really captured, so playback stays real-time either way.
                     int waitMs = (int)Math.Max(0, dueMs - clock.Elapsed.TotalMilliseconds);
                     if (waitMs > 0 && stop.WaitHandle.WaitOne(waitMs)) break;
+                    dueMs = Math.Max(dueMs + frameMs, clock.Elapsed.TotalMilliseconds);
 
                     byte[]? pixels = null;
                     var hr = duplication.AcquireNextFrame(last is null ? 250u : 0u, out var info, out var resource);
@@ -135,14 +146,16 @@ internal sealed class RegionRecorder(IntPtr monitor, Rectangle area, int fps, in
                         continue;
                     }
 
-                    frameIndex++;
-                    if (pixels is null || (last is not null && pixels.AsSpan().SequenceEqual(last)))
+                    // Unchanged screen: the previous frame simply stays up for longer.
+                    if (pixels is null || (last is not null && pixels.AsSpan().SequenceEqual(last))) continue;
+                    if (bytesHeld + pixels.Length > maxBytes)
                     {
-                        frames[^1].DurationMs = (int)Math.Round(frameIndex * frameMs) - frames.Sum(f => f.DurationMs) + frames[^1].DurationMs;
-                        continue;
+                        stoppedEarly = true;
+                        break;
                     }
-                    int start = frames.Sum(f => f.DurationMs);
-                    frames.Add(new RecordedFrame(pixels, (int)Math.Round(frameIndex * frameMs) - start));
+                    shownAt.Add(clock.Elapsed.TotalMilliseconds);
+                    frames.Add(new RecordedFrame(pixels, 0));
+                    bytesHeld += pixels.Length;
                     last = pixels;
                     if (poke != IntPtr.Zero) { ScreenCapturer.DestroyWindow(poke); poke = IntPtr.Zero; }
                 }
@@ -154,8 +167,12 @@ internal sealed class RegionRecorder(IntPtr monitor, Rectangle area, int fps, in
             }
 
             if (frames.Count == 0) throw new InvalidOperationException("No frames were recorded.");
-            Log.Write($"Recorded {frames.Count} distinct frames, {outW}x{outH}, {frames.Sum(f => f.DurationMs)} ms, HDR={toneMapper is not null}");
-            return new Recording(frames, outW, outH);
+            // Each frame lasts until the next one was captured; the last until recording stopped.
+            double endMs = Math.Max(clock.Elapsed.TotalMilliseconds, shownAt[^1] + frameMs);
+            for (int i = 0; i < frames.Count; i++)
+                frames[i].DurationMs = Math.Max(1, (int)Math.Round((i + 1 < frames.Count ? shownAt[i + 1] : endMs) - shownAt[i]));
+            Log.Write($"Recorded {frames.Count} distinct frames, {outW}x{outH}, {frames.Sum(f => f.DurationMs)} ms, HDR={toneMapper is not null}, stopped early={stoppedEarly}");
+            return new Recording(frames, outW, outH, stoppedEarly);
         }
     }
 

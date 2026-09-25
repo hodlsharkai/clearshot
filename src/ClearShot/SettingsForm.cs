@@ -12,6 +12,8 @@ internal sealed class SettingsForm : Form
     private readonly CheckBox _preview = new() { Text = "Show a small preview after each capture", AutoSize = true, Margin = CheckMargin };
     private readonly CheckBox _freeze = new() { Text = "Freeze the screen while picking a region", AutoSize = true, Margin = CheckMargin };
     private readonly CheckBox _pauseMedia = new() { Text = "Pause videos and music while picking a region", AutoSize = true, Margin = CheckMargin };
+    private readonly ComboBox _gifQuality = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 160 };
+    private readonly CheckBox _saveMp4 = new() { Text = "Also save an MP4 (full colour, much smaller file)", AutoSize = true, Margin = CheckMargin };
     private readonly CheckBox _hdrJxr = new() { Text = "Save a .jxr copy (opens in HDR in Windows Photos)", AutoSize = true, Margin = CheckMargin };
     private readonly CheckBox _hdrPng = new() { Text = "Save an HDR PNG copy (shows in HDR in Chrome and Edge)", AutoSize = true, Margin = CheckMargin };
     private readonly CheckBox _startup = new() { Text = "Start ClearShot with Windows", AutoSize = true, Margin = CheckMargin };
@@ -60,6 +62,9 @@ internal sealed class SettingsForm : Form
         _preview.Checked = shown.ShowPreview;
         _pauseMedia.Checked = shown.PauseMediaWhileSelecting;
         _freeze.Checked = shown.FreezeWhileSelecting;
+        _gifQuality.Items.AddRange(["Standard", "High"]);
+        _gifQuality.SelectedIndex = shown.GifQuality == "High" ? 1 : 0;
+        _saveMp4.Checked = shown.SaveMp4;
         _hdrJxr.Checked = shown.SaveHdrJxr;
         _hdrPng.Checked = shown.SaveHdrPng;
         _startup.Checked = draft?.StartWithWindows ?? StartupRegistration.IsEnabled;
@@ -67,8 +72,9 @@ internal sealed class SettingsForm : Form
         _theme.SelectedIndex = Math.Max(0, Array.FindIndex(Theme.Choices, c => c.Value == settings.Theme));
         _theme.SelectedIndexChanged += (_, _) => ThemePicked?.Invoke(SelectedTheme);
         // Wired after the initial values are set, so opening the window doesn't count as a change.
-        foreach (var box in new[] { _sound, _preview, _freeze, _pauseMedia, _hdrJxr, _hdrPng })
+        foreach (var box in new[] { _sound, _preview, _freeze, _pauseMedia, _saveMp4, _hdrJxr, _hdrPng })
             box.CheckedChanged += (_, _) => ApplyChange();
+        _gifQuality.SelectedIndexChanged += (_, _) => ApplyChange();
         _startup.CheckedChanged += (_, _) =>
         {
             try { StartupRegistration.Set(_startup.Checked); }
@@ -106,6 +112,11 @@ internal sealed class SettingsForm : Form
         open.Click += (_, _) => TrayApp.OpenFolder(_folder.Text);
         AddRow(grid, "Save screenshots to", _folder, browse, open);
         AddWide(grid, Hint("Every screenshot is saved here as a PNG and copied to your clipboard, ready to paste."));
+
+        AddWide(grid, SectionTitle("GIFs"));
+        AddRow(grid, "GIF quality", _gifQuality);
+        AddWide(grid, Hint("Standard: up to 960 px wide at 15 fps, small files, ideal for Discord. High: up to 1920 px at 30 fps with smoother colours, bigger files."));
+        AddWide(grid, _saveMp4);
 
         AddWide(grid, SectionTitle("HDR mode"));
         AddWide(grid, _hdrJxr);
@@ -171,6 +182,8 @@ internal sealed class SettingsForm : Form
         ShowPreview = _preview.Checked,
         PauseMediaWhileSelecting = _pauseMedia.Checked,
         FreezeWhileSelecting = _freeze.Checked,
+        GifQuality = _gifQuality.SelectedIndex == 1 ? "High" : "Standard",
+        SaveMp4 = _saveMp4.Checked,
         SaveHdrJxr = _hdrJxr.Checked,
         SaveHdrPng = _hdrPng.Checked,
         Theme = SelectedTheme,
@@ -267,6 +280,8 @@ internal sealed class SettingsForm : Form
         _settings.ShowPreview = _preview.Checked;
         _settings.PauseMediaWhileSelecting = _pauseMedia.Checked;
         _settings.FreezeWhileSelecting = _freeze.Checked;
+        _settings.GifQuality = _gifQuality.SelectedIndex == 1 ? "High" : "Standard";
+        _settings.SaveMp4 = _saveMp4.Checked;
         _settings.SaveHdrJxr = _hdrJxr.Checked;
         _settings.SaveHdrPng = _hdrPng.Checked;
         SettingsChanged?.Invoke();

@@ -47,6 +47,21 @@ public class GifTests
     }
 
     [Fact]
+    public void High_quality_dithered_gif_is_valid_and_frees_frames_as_it_goes()
+    {
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".gif");
+        try
+        {
+            var recording = Synthetic(3);
+            GifMaker.Save(recording, path, dither: true);
+            using var gif = ISImage.Load(path);
+            Assert.Equal(3, gif.Frames.Count);
+            Assert.Throws<InvalidOperationException>(() => recording.Frames[0].Bgra);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
     public void Delays_follow_the_running_total_and_respect_the_minimum()
     {
         var delays = GifMaker.CentisecondDelays(Enumerable.Repeat(67, 15).Append(5).ToArray());
@@ -86,22 +101,35 @@ public class GifTests
         var primary = Screen.PrimaryScreen!.Bounds;
         var monitor = ScreenCapturer.MonitorFromPoint(new Point(primary.X + 10, primary.Y + 10), 2);
 
-        foreach (var area in new[] { new Rectangle(100, 100, 800, 450), new Rectangle(Point.Empty, primary.Size) })
+        foreach (var (area, fps, maxWidth) in new[]
+                 {
+                     (new Rectangle(100, 100, 800, 450), 15, 960),        // Standard
+                     (new Rectangle(Point.Empty, primary.Size), 15, 960),  // Standard, whole 4K screen
+                     (new Rectangle(Point.Empty, primary.Size), 30, 1920), // High, whole 4K screen
+                 })
         {
             using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(2));
             var clock = System.Diagnostics.Stopwatch.StartNew();
-            var recording = await new RegionRecorder(monitor, area, 15, 960, TimeSpan.FromSeconds(15)).RunAsync(stop.Token);
+            var recording = await new RegionRecorder(monitor, area, fps, maxWidth, TimeSpan.FromSeconds(15)).RunAsync(stop.Token);
             var recordMs = clock.ElapsedMilliseconds;
             var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".gif");
+            var mp4 = Path.ChangeExtension(path, ".mp4");
             clock.Restart();
-            GifMaker.Save(recording, path);
+            await Mp4Maker.SaveAsync(recording, mp4);
+            var mp4Ms = clock.ElapsedMilliseconds;
+            clock.Restart();
+            int frames = recording.Frames.Count, total = recording.TotalMs, w = recording.Width;
+            GifMaker.Save(recording, path, dither: fps == 30);
             var encodeMs = clock.ElapsedMilliseconds;
             var mb = new FileInfo(path).Length / 1048576.0;
+            var mp4Mb = new FileInfo(mp4).Length / 1048576.0;
             File.Delete(path);
-            Console.WriteLine($"LIVE: area {area.Size} -> {recording.Width}x{recording.Height}, {recording.Frames.Count} distinct frames, " +
-                              $"length {recording.TotalMs} ms (recorded for {recordMs} ms), encode {encodeMs} ms, {mb:0.00} MB");
-            Assert.True(recording.Width <= 960);
-            Assert.InRange(recording.TotalMs, 1700, 2300);
+            File.Delete(mp4);
+            Console.WriteLine($"LIVE: {fps} fps, area {area.Size} -> {w}x{recording.Height}, {frames} distinct frames, " +
+                              $"length {total} ms (recorded for {recordMs} ms); GIF {mb:0.00} MB in {encodeMs} ms; MP4 {mp4Mb:0.00} MB in {mp4Ms} ms");
+            Assert.True(w <= maxWidth);
+            // Playback must match real time, even if the frame rate couldn't be kept up.
+            Assert.InRange(total, recordMs - 400, recordMs + 100);
         }
     }
 

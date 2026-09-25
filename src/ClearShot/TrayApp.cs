@@ -7,7 +7,7 @@ namespace ClearShot;
 internal sealed class TrayApp : ApplicationContext
 {
     private const int FullScreenId = 1, RegionId = 2, EscapeId = 3, GifId = 4;
-    private const int GifFps = 15, GifMaxWidth = 960;
+
     private static readonly TimeSpan GifMaxLength = TimeSpan.FromSeconds(15);
     private const long DiscordFreeLimitBytes = 10 * 1024 * 1024;
     private CancellationTokenSource? _gifStop;
@@ -239,39 +239,57 @@ internal sealed class TrayApp : ApplicationContext
 
             var hmonitor = ScreenCapturer.MonitorFromPoint(new Point(monitor.X + monitor.Width / 2, monitor.Y + monitor.Height / 2), 2);
             var onScreen = box with { X = box.X + monitor.X, Y = box.Y + monitor.Y };
+            // Standard: small and quick, ideal for Discord. High: bigger, smoother, dithered colours.
+            bool high = _settings.GifQuality == "High";
+            int fps = high ? 30 : 15, maxWidth = high ? 1920 : 960;
+
             _gifStop = new CancellationTokenSource();
             bool escapeHooked = Hotkey.TryParse("Escape", out var esc) && _hotkeys.Register(EscapeId, esc);
+            using var overlay = new RecordingOverlay(onScreen, monitor, GifMaxLength);
+            overlay.StopClicked += () => _gifStop?.Cancel();
+            overlay.Show();
             Recording recording;
-            using (var overlay = new RecordingOverlay(onScreen, monitor, GifMaxLength))
+            try
             {
-                overlay.StopClicked += () => _gifStop?.Cancel();
-                overlay.Show();
-                try
-                {
-                    recording = await new RegionRecorder(hmonitor, box, GifFps, GifMaxWidth, GifMaxLength).RunAsync(_gifStop.Token);
-                }
-                finally
-                {
-                    if (escapeHooked) _hotkeys.Unregister(EscapeId);
-                    _gifStop.Dispose();
-                    _gifStop = null;
-                }
+                recording = await new RegionRecorder(hmonitor, box, fps, maxWidth, GifMaxLength).RunAsync(_gifStop.Token);
+            }
+            finally
+            {
+                if (escapeHooked) _hotkeys.Unregister(EscapeId);
+                _gifStop.Dispose();
+                _gifStop = null;
             }
 
             Directory.CreateDirectory(_settings.SaveFolder);
             var path = FileNamer.UniquePath(_settings.SaveFolder, DateTime.Now, ".gif");
-            await Task.Run(() => GifMaker.Save(recording, path));
+            using var first = FirstFrame(recording); // before encoding releases the frames
+            bool mp4Saved = false;
+            if (_settings.SaveMp4)
+            {
+                // The MP4 goes first: it reads the frames, and the GIF step frees them as it goes.
+                overlay.ShowSaving("Making your MP4…");
+                try
+                {
+                    await Mp4Maker.SaveAsync(recording, Path.ChangeExtension(path, ".mp4"));
+                    mp4Saved = true;
+                }
+                catch (Exception ex)
+                {
+                    Log.Write($"MP4 save failed: {ex}");
+                }
+            }
+            overlay.ShowSaving("Making your GIF…");
+            await Task.Run(() => GifMaker.Save(recording, path, dither: high));
             ClipboardOutput.CopyFile(path);
             if (_settings.PlaySound) _sound.Play();
 
             long bytes = new FileInfo(path).Length;
             var caption = $"GIF copied and saved  ·  {recording.TotalMs / 1000.0:0.0} s  ·  {bytes / 1048576.0:0.0} MB";
+            if (mp4Saved) caption += "  ·  MP4 too";
+            else if (_settings.SaveMp4) caption += "  ·  MP4 failed";
+            if (recording.StoppedEarly) caption += "  ·  stopped early (memory limit)";
             if (bytes > DiscordFreeLimitBytes) caption += "  ·  over Discord's 10 MB free limit";
-            if (_settings.ShowPreview)
-            {
-                using var first = FirstFrame(recording);
-                ShowPreview(first, path, monitor, hdrCopy: false, caption);
-            }
+            if (_settings.ShowPreview) ShowPreview(first, path, monitor, hdrCopy: false, caption);
         }
         catch (Exception ex)
         {

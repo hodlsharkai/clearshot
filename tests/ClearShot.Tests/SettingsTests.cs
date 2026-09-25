@@ -10,6 +10,8 @@ public class SettingsTests
         Assert.Equal("Alt+C", s.FullScreenHotkey);
         Assert.Equal("Alt+Shift+C", s.RegionHotkey);
         Assert.Equal("Alt+G", s.GifHotkey);
+        Assert.Equal("Standard", s.GifQuality);
+        Assert.False(s.SaveMp4);
         Assert.True(s.PlaySound);
         Assert.True(s.ShowPreview);
         Assert.False(s.PauseMediaWhileSelecting);

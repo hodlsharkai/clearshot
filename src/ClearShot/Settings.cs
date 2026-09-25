@@ -18,6 +18,8 @@ internal sealed class Settings
     public string FullScreenHotkey { get; set; } = "Alt+C";
     public string RegionHotkey { get; set; } = "Alt+Shift+C";
     public string GifHotkey { get; set; } = "Alt+G";
+    public string GifQuality { get; set; } = "Standard";
+    public bool SaveMp4 { get; set; }
     public bool PlaySound { get; set; } = true;
     public bool ShowPreview { get; set; } = true;
     public bool PauseMediaWhileSelecting { get; set; }
