@@ -45,6 +45,13 @@ public class EditorLookTests
                 editor.SetFont("Impact", false);
                 editor.PointerDown(new Point(monitor.X + 470, monitor.Y + 140), MouseButtons.Left);
                 foreach (var c in "Look here") editor.TypeChar(c);
+                if (Environment.GetEnvironmentVariable("CLEARSHOT_EDITOR_LOOK_SELECT") == "1")
+                {
+                    editor.Key(Keys.Escape);
+                    editor.PickTool(Tool.None);
+                    editor.PointerDown(new Point(monitor.X + 390, monitor.Y + 200), MouseButtons.Left);
+                    editor.PointerUp();
+                }
                 for (int i = 0; i < 10; i++) { Application.DoEvents(); Thread.Sleep(20); }
 
                 using var output = new Bitmap(background.Width, background.Height);

@@ -60,6 +60,13 @@ internal sealed class EditorOverlay : IDisposable
 
     // The last thing drawn: a new colour picked with that same tool recolours it too.
     private Annotation? _lastDrawn;
+
+    // Select tool: the drawing picked, and the one being dragged (taken out of the picture while it moves).
+    private Annotation? _selected, _moving;
+    private int _movingIndex;
+    private PointF _moveLast, _moveTotal;
+
+    public Annotation? Selected => _selected;
     public float StrokeSize { get; private set; }
     public float TextSize { get; private set; }
     public string FontName { get; private set; } = "Segoe UI";
@@ -100,7 +107,8 @@ internal sealed class EditorOverlay : IDisposable
             new(tip, icon, _ => PickTool(tool), () => Tool == tool);
         _tools = new ToolBar(vertical: true, _scale,
         [
-            ToolItem(Tool.Pen, "Pen (P)", Icons.Pen),
+            ToolItem(Tool.None, "Select (V): click a drawing to move, recolour, resize (scroll) or delete it. Drag empty space to move the area", Icons.Select),
+            ToolItem(Tool.Pen, "Pen (P)", Icons.Pen) with { SeparatorBefore = true },
             ToolItem(Tool.Line, "Line (L)", Icons.Line),
             ToolItem(Tool.Arrow, "Arrow (A)", Icons.Arrow),
             ToolItem(Tool.Rectangle, "Rectangle (R)", Icons.Rectangle),
@@ -109,7 +117,7 @@ internal sealed class EditorOverlay : IDisposable
             new("Font and bold", Icons.Font, ShowFonts),
             ToolItem(Tool.Step, "Numbered steps (N)", Icons.Step),
             ToolItem(Tool.Pixelate, "Pixelate: hide names, emails, addresses (B)", Icons.Pixelate),
-            new("Colour: for this tool, and recolours what you just drew with it", Icons.Colour(() => _typing?.Color ?? Colour), ShowColours, SeparatorBefore: true),
+            new("Colour: for this tool, and recolours what you just drew or selected", Icons.Colour(() => _typing?.Color ?? _selected?.Color ?? Colour), ShowColours, SeparatorBefore: true),
             new("Undo (Ctrl+Z)", Icons.Undo, _ => Undo()),
         ]);
         _actions = new ToolBar(vertical: false, _scale,
@@ -269,6 +277,20 @@ internal sealed class EditorOverlay : IDisposable
         }
 
         var grip = HitTest(p);
+        if (Tool == Tool.None && grip is Grip.None or Grip.Move && _area.Contains(p))
+        {
+            var hit = _doc.HitTest(p, Math.Max(4, 5 * _scale));
+            Select(hit);
+            if (hit is not null)
+            {
+                _moving = hit;
+                _movingIndex = _doc.Lift(hit);
+                _moveLast = p;
+                _moveTotal = PointF.Empty;
+                InvalidateImage(hit.Bounds);
+                return;
+            }
+        }
         if (grip != Grip.None)
         {
             _grip = grip;
@@ -324,6 +346,21 @@ internal sealed class EditorOverlay : IDisposable
             DragText(p);
             return;
         }
+        if (_moving is not null)
+        {
+            var before = _moving.Bounds;
+            float dx = p.X - _moveLast.X, dy = p.Y - _moveLast.Y;
+            _moving.Offset(dx, dy);
+            _moveLast = p;
+            _moveTotal = new PointF(_moveTotal.X + dx, _moveTotal.Y + dy);
+            InvalidateImage(Rectangle.Union(before, _moving.Bounds));
+            return;
+        }
+        if (Tool == Tool.None && _area.Contains(p) && HitTest(p) is Grip.Move or Grip.None && _doc.HitTest(p, Math.Max(4, 5 * _scale)) is not null)
+        {
+            source.Cursor = Cursors.SizeAll;
+            return;
+        }
 
         var hover = HitTest(p);
         source.Cursor = _typing is not null && TextHandle(_typing).Contains(p) ? Cursors.SizeNWSE
@@ -357,6 +394,14 @@ internal sealed class EditorOverlay : IDisposable
     internal void PointerUp()
     {
         _textDrag = TextDrag.None;
+        if (_moving is not null)
+        {
+            var moved = _moving;
+            _moving = null;
+            _doc.Drop(moved, _movingIndex, _moveTotal.X, _moveTotal.Y);
+            InvalidateImage(moved.Bounds);
+            return;
+        }
         if (_grip != Grip.None)
         {
             _grip = Grip.None;
@@ -386,6 +431,16 @@ internal sealed class EditorOverlay : IDisposable
     internal void Wheel(int delta)
     {
         int steps = Math.Sign(delta);
+        if (_selected is not null && _typing is null)
+        {
+            var before = _selected.Bounds;
+            float size = _selected is TextNote
+                ? Math.Clamp(_selected.Size * (steps > 0 ? 1.1f : 1 / 1.1f), MinTextSize, MaxTextSize)
+                : Math.Clamp(_selected.Size + steps, 1, 40);
+            _doc.Resize(_selected, size);
+            InvalidateImage(Rectangle.Union(before, _selected.Bounds));
+            return;
+        }
         if (Tool == Tool.Text || _typing is not null)
         {
             TextSize = Math.Clamp(TextSize * (steps > 0 ? 1.1f : 1 / 1.1f), MinTextSize, MaxTextSize);
@@ -486,7 +541,16 @@ internal sealed class EditorOverlay : IDisposable
             return false; // typed characters arrive through TypeChar
         }
 
+        if (key == Keys.Escape && _selected is not null) { Select(null); return true; }
         if (key == Keys.Escape) { Finish(EditAction.Cancel); return true; }
+        if (key is Keys.Delete or Keys.Back && _selected is not null)
+        {
+            var gone = _selected;
+            Select(null);
+            _doc.Delete(gone);
+            InvalidateImage(gone.Bounds);
+            return true;
+        }
         if (key == Keys.Enter) { Finish(EditAction.Done); return true; }
         if (ctrl && key == Keys.C) { Finish(EditAction.Copy); return true; }
         if (ctrl && key == Keys.S) { Finish(EditAction.Save); return true; }
@@ -494,6 +558,7 @@ internal sealed class EditorOverlay : IDisposable
         if (ctrl || (keyData & Keys.Alt) != 0) return false;
         Tool? picked = key switch
         {
+            Keys.V => Tool.None,
             Keys.P => Tool.Pen,
             Keys.L => Tool.Line,
             Keys.A => Tool.Arrow,
@@ -538,6 +603,7 @@ internal sealed class EditorOverlay : IDisposable
     internal void PickTool(Tool tool)
     {
         CommitText();
+        Select(null);
         Tool = Tool == tool ? Tool.None : tool;
         _tools.Invalidate();
         _canvas.Invalidate();
@@ -547,7 +613,18 @@ internal sealed class EditorOverlay : IDisposable
     {
         if (_typing is not null) { var gone = _typing.Bounds; _typing = null; UpdateHint(); InvalidateImage(gone); return; }
         var changed = _doc.Undo();
-        if (!changed.IsEmpty) InvalidateImage(changed);
+        if (_selected is not null && !_doc.Items.Contains(_selected)) Select(null);
+        if (!changed.IsEmpty) _canvas.Invalidate();
+    }
+
+    private void Select(Annotation? item)
+    {
+        if (ReferenceEquals(item, _selected)) return;
+        if (_selected is not null) InvalidateImage(Rectangle.Inflate(_selected.Bounds, 4, 4));
+        _selected = item;
+        if (item is not null) InvalidateImage(Rectangle.Inflate(item.Bounds, 4, 4));
+        UpdateHint();
+        _tools.Invalidate();
     }
 
     /// <summary>
@@ -559,7 +636,12 @@ internal sealed class EditorOverlay : IDisposable
         var tool = _typing is not null ? Tool.Text : Tool;
         if (tool != Tool.None) ToolColours[tool] = colour;
         _lastColour = colour;
-        if (_typing is not null)
+        if (_selected is not null && _typing is null)
+        {
+            _doc.Recolour(_selected, colour);
+            InvalidateImage(_selected.Bounds);
+        }
+        else if (_typing is not null)
         {
             _typing.Color = colour;
             InvalidateImage(_typing.Bounds);
@@ -667,8 +749,9 @@ internal sealed class EditorOverlay : IDisposable
         }
     }
 
-    private void UpdateHint() => _hint.SetText(_typing is not null
-        ? "Typing  ·  drag the corner square to resize  ·  Esc or click outside to finish"
+    private void UpdateHint() => _hint.SetText(
+        _typing is not null ? "Typing  ·  drag the corner square to resize  ·  Esc or click outside to finish"
+        : _selected is not null ? "Selected  ·  drag to move  ·  scroll: size  ·  colour box: recolour  ·  Delete: remove  ·  Esc: deselect"
         : "Enter: copy and save  ·  Esc or right-click: close  ·  Scroll: size");
 
     internal void Finish(EditAction action)
@@ -708,7 +791,7 @@ internal sealed class EditorOverlay : IDisposable
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.PixelOffsetMode = PixelOffsetMode.Half;
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
-        switch (_drawing)
+        switch (_drawing ?? _moving)
         {
             case PixelateBox box:
                 // The blocks are worked out on release; while dragging, show where they'll go.
@@ -720,9 +803,17 @@ internal sealed class EditorOverlay : IDisposable
                     g.DrawRectangle(white, r);
                 }
                 break;
-            case not null:
-                _drawing.Draw(g, _doc.Baked);
+            case { } live:
+                live.Draw(g, _doc.Baked);
                 break;
+        }
+        if (_selected is not null)
+        {
+            var b = Rectangle.Inflate(_selected.Bounds, 2, 2);
+            using var dark = new Pen(Color.FromArgb(160, 0, 0, 0), 3);
+            using var accent = new Pen(ToolBar.Accent, 1.5f) { DashStyle = DashStyle.Dash };
+            g.DrawRectangle(dark, b);
+            g.DrawRectangle(accent, b);
         }
         if (_typing is not null)
         {

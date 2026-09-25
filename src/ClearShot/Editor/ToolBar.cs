@@ -161,6 +161,9 @@ internal sealed class ToolBar : Form
 /// <summary>Simple line icons, drawn in a 16 × 16 box. No emoji or icon fonts, so they look the same everywhere.</summary>
 internal static class Icons
 {
+    public static void Select(Graphics g, Pen p, Brush b) =>
+        g.DrawPolygon(p, [new PointF(4, 2), new PointF(12.5f, 10), new PointF(8.5f, 10.5f), new PointF(10.5f, 14.5f), new PointF(8.5f, 15), new PointF(6.5f, 11.5f), new PointF(4, 14)]);
+
     public static void Pen(Graphics g, Pen p, Brush b)
     {
         g.DrawPolygon(p, [new PointF(11, 2.5f), new PointF(13.5f, 5), new PointF(5, 13.5f), new PointF(2.5f, 13.5f), new PointF(2.5f, 11)]);

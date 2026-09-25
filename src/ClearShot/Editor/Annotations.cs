@@ -23,6 +23,21 @@ internal abstract class Annotation
     /// <summary>The area this touches, for repainting only what changed.</summary>
     public abstract Rectangle Bounds { get; }
 
+    /// <summary>True if a click at <paramref name="p"/> lands on this drawing (within <paramref name="tolerance"/> pixels).</summary>
+    public abstract bool Hit(PointF p, float tolerance);
+
+    public abstract void Offset(float dx, float dy);
+
+    protected static PointF Shift(PointF p, float dx, float dy) => new(p.X + dx, p.Y + dy);
+
+    protected static float SegmentDistance(PointF p, PointF a, PointF b)
+    {
+        float vx = b.X - a.X, vy = b.Y - a.Y, lengthSq = vx * vx + vy * vy;
+        float t = lengthSq == 0 ? 0 : Math.Clamp(((p.X - a.X) * vx + (p.Y - a.Y) * vy) / lengthSq, 0, 1);
+        float cx = a.X + t * vx - p.X, cy = a.Y + t * vy - p.Y;
+        return MathF.Sqrt(cx * cx + cy * cy);
+    }
+
     protected static Rectangle Grow(RectangleF r, float by) =>
         Rectangle.FromLTRB((int)Math.Floor(r.Left - by), (int)Math.Floor(r.Top - by), (int)Math.Ceiling(r.Right + by), (int)Math.Ceiling(r.Bottom + by));
 
@@ -64,12 +79,26 @@ internal sealed class Stroke : Annotation
     }
 
     public override Rectangle Bounds => Grow(Span(Points), (Highlighter ? Size * 4 : Size) / 2 + 2);
+
+    public override bool Hit(PointF p, float tolerance)
+    {
+        float reach = (Highlighter ? Size * 4 : Size) / 2 + tolerance;
+        if (Points.Count == 1) return SegmentDistance(p, Points[0], Points[0]) <= reach;
+        for (int i = 1; i < Points.Count; i++)
+            if (SegmentDistance(p, Points[i - 1], Points[i]) <= reach) return true;
+        return false;
+    }
+
+    public override void Offset(float dx, float dy)
+    {
+        for (int i = 0; i < Points.Count; i++) Points[i] = Shift(Points[i], dx, dy);
+    }
 }
 
 /// <summary>A straight line, optionally with an arrowhead at the end.</summary>
 internal sealed class LineShape : Annotation
 {
-    public PointF Start { get; init; }
+    public PointF Start { get; set; }
     public PointF End { get; set; }
     public bool Arrow { get; init; }
 
@@ -102,11 +131,16 @@ internal sealed class LineShape : Annotation
     }
 
     public override Rectangle Bounds => Grow(Normalise(Start, End), Size + (Arrow ? HeadLength : 0) + 2);
+
+    public override bool Hit(PointF p, float tolerance) =>
+        SegmentDistance(p, Start, End) <= Size / 2 + tolerance + (Arrow && SegmentDistance(p, End, End) <= HeadLength ? HeadLength / 2 : 0);
+
+    public override void Offset(float dx, float dy) { Start = Shift(Start, dx, dy); End = Shift(End, dx, dy); }
 }
 
 internal sealed class RectangleShape : Annotation
 {
-    public PointF Start { get; init; }
+    public PointF Start { get; set; }
     public PointF End { get; set; }
 
     public override void Draw(Graphics g, Bitmap target)
@@ -117,12 +151,23 @@ internal sealed class RectangleShape : Annotation
     }
 
     public override Rectangle Bounds => Grow(Normalise(Start, End), Size + 2);
+
+    public override bool Hit(PointF p, float tolerance)
+    {
+        var r = Normalise(Start, End);
+        PointF a = new(r.Left, r.Top), b = new(r.Right, r.Top), c = new(r.Right, r.Bottom), d = new(r.Left, r.Bottom);
+        float reach = Size / 2 + tolerance;
+        return SegmentDistance(p, a, b) <= reach || SegmentDistance(p, b, c) <= reach
+            || SegmentDistance(p, c, d) <= reach || SegmentDistance(p, d, a) <= reach;
+    }
+
+    public override void Offset(float dx, float dy) { Start = Shift(Start, dx, dy); End = Shift(End, dx, dy); }
 }
 
 /// <summary>A numbered circle: 1, 2, 3... for step-by-step guides.</summary>
 internal sealed class StepMarker : Annotation
 {
-    public PointF Centre { get; init; }
+    public PointF Centre { get; set; }
     public int Number { get; init; }
 
     public float Diameter => Math.Max(22, Size * 7);
@@ -144,6 +189,10 @@ internal sealed class StepMarker : Annotation
     internal static bool IsLight(Color c) => c.R * 0.299 + c.G * 0.587 + c.B * 0.114 > 160;
 
     public override Rectangle Bounds => Grow(new RectangleF(Centre.X - Diameter / 2, Centre.Y - Diameter / 2, Diameter, Diameter), 3);
+
+    public override bool Hit(PointF p, float tolerance) => SegmentDistance(p, Centre, Centre) <= Diameter / 2 + tolerance;
+
+    public override void Offset(float dx, float dy) => Centre = Shift(Centre, dx, dy);
 }
 
 internal sealed class TextNote : Annotation
@@ -194,12 +243,21 @@ internal sealed class TextNote : Annotation
     }
 
     public override Rectangle Bounds => Grow(Measure(out _), Size * 0.5f + 4);
+
+    public override bool Hit(PointF p, float tolerance)
+    {
+        var box = Measure(out _);
+        box.Inflate(tolerance, tolerance);
+        return box.Contains(p);
+    }
+
+    public override void Offset(float dx, float dy) => Origin = Shift(Origin, dx, dy);
 }
 
 /// <summary>Hides what's underneath (names, emails, wallet addresses) behind big solid blocks.</summary>
 internal sealed class PixelateBox : Annotation
 {
-    public PointF Start { get; init; }
+    public PointF Start { get; set; }
     public PointF End { get; set; }
 
     /// <summary>Blocks are large on purpose: small ones can leave text guessable.</summary>
@@ -245,6 +303,15 @@ internal sealed class PixelateBox : Annotation
     }
 
     public override Rectangle Bounds => Grow(Normalise(Start, End), 2);
+
+    public override bool Hit(PointF p, float tolerance)
+    {
+        var r = Normalise(Start, End);
+        r.Inflate(tolerance, tolerance);
+        return r.Contains(p);
+    }
+
+    public override void Offset(float dx, float dy) { Start = Shift(Start, dx, dy); End = Shift(End, dx, dy); }
 }
 
 /// <summary>
@@ -255,6 +322,8 @@ internal sealed class EditDocument : IDisposable
 {
     private readonly Bitmap _original;
     private readonly List<Annotation> _items = [];
+    // Every change (draw, move, recolour, resize, delete) pushes how to take it back.
+    private readonly Stack<Action> _undo = new();
 
     public EditDocument(Bitmap original)
     {
@@ -275,15 +344,61 @@ internal sealed class EditDocument : IDisposable
     public void Add(Annotation item)
     {
         _items.Add(item);
+        _undo.Push(() => _items.Remove(item));
         using var g = CreateGraphics(Baked);
         item.Draw(g, Baked);
+    }
+
+    /// <summary>The drawing on top at <paramref name="p"/>, if any.</summary>
+    public Annotation? HitTest(PointF p, float tolerance)
+    {
+        for (int i = _items.Count - 1; i >= 0; i--)
+            if (_items[i].Hit(p, tolerance)) return _items[i];
+        return null;
     }
 
     /// <summary>Gives a finished drawing a new colour.</summary>
     public void Recolour(Annotation item, Color colour)
     {
-        if (!_items.Contains(item)) return;
+        if (!_items.Contains(item) || item.Color.ToArgb() == colour.ToArgb()) return;
+        var old = item.Color;
         item.Color = colour;
+        _undo.Push(() => item.Color = old);
+        Rebake();
+    }
+
+    /// <summary>Changes a finished drawing's thickness or text size.</summary>
+    public void Resize(Annotation item, float size)
+    {
+        if (!_items.Contains(item) || item.Size == size) return;
+        var old = item.Size;
+        item.Size = size;
+        _undo.Push(() => item.Size = old);
+        Rebake();
+    }
+
+    public void Delete(Annotation item)
+    {
+        int index = _items.IndexOf(item);
+        if (index < 0) return;
+        _items.RemoveAt(index);
+        _undo.Push(() => _items.Insert(Math.Min(index, _items.Count), item));
+        Rebake();
+    }
+
+    /// <summary>Takes a drawing out while it's dragged. Returns its place in the stack, for <see cref="Drop"/>.</summary>
+    public int Lift(Annotation item)
+    {
+        int index = _items.IndexOf(item);
+        if (index >= 0) { _items.RemoveAt(index); Rebake(); }
+        return index;
+    }
+
+    /// <summary>Puts a dragged drawing back in its old place; the move can be undone.</summary>
+    public void Drop(Annotation item, int index, float movedX, float movedY)
+    {
+        _items.Insert(Math.Clamp(index, 0, _items.Count), item);
+        if (movedX != 0 || movedY != 0) _undo.Push(() => item.Offset(-movedX, -movedY));
         Rebake();
     }
 
@@ -296,11 +411,10 @@ internal sealed class EditDocument : IDisposable
     /// <returns>The area to repaint, or empty if there was nothing to undo.</returns>
     public Rectangle Undo()
     {
-        if (_items.Count == 0) return Rectangle.Empty;
-        var removed = _items[^1];
-        _items.RemoveAt(_items.Count - 1);
+        if (_undo.Count == 0) return Rectangle.Empty;
+        _undo.Pop()();
         Rebake();
-        return removed.Bounds;
+        return new Rectangle(Point.Empty, Size);
     }
 
     /// <summary>The final picture for <paramref name="area"/>, full resolution.</summary>

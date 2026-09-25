@@ -424,6 +424,75 @@ public class TextEditingTests
     }
 
     [Fact]
+    public void Select_tool_moves_recolours_resizes_and_deletes_old_drawings_and_undo_reverses_each()
+    {
+        OnUiThread(() =>
+        {
+            using var doc = new EditDocument(new Bitmap(800, 600));
+            using var editor = new EditorOverlay(doc, Monitor, new Rectangle(0, 0, 800, 600)) { TakeFocus = false };
+            var run = editor.RunAsync();
+            Application.DoEvents();
+            var dummy = new Control();
+            void Drag(int x1, int y1, int x2, int y2)
+            {
+                editor.PointerDown(S(x1, y1), MouseButtons.Left);
+                editor.PointerMove(S(x2, y2), dummy);
+                editor.PointerUp();
+            }
+
+            editor.PickTool(Tool.Rectangle);
+            Drag(100, 100, 200, 200);
+            editor.PickTool(Tool.Arrow);
+            Drag(300, 300, 400, 300);
+            var box = doc.Items.OfType<RectangleShape>().Single();
+            var arrow = doc.Items.OfType<LineShape>().Single();
+
+            // Select (V), click the older rectangle's edge and drag it.
+            Assert.True(editor.Key(Keys.V));
+            Drag(100, 150, 130, 170);
+            Assert.Same(box, editor.Selected);
+            Assert.Equal(new PointF(130, 120), box.Start);
+            Assert.Equal(2, doc.Items.Count);
+            Assert.Same(box, doc.Items[0]); // stays underneath the arrow
+
+            // Recolour and resize the selected drawing only.
+            var green = EditorOverlay.Palette[3].Color;
+            var arrowColour = arrow.Color;
+            editor.SetColour(green);
+            Assert.Equal(green.ToArgb(), box.Color.ToArgb());
+            Assert.Equal(arrowColour.ToArgb(), arrow.Color.ToArgb());
+            float size = box.Size;
+            editor.Wheel(120);
+            Assert.Equal(size + 1, box.Size);
+
+            // Delete it, then undo everything step by step.
+            Assert.True(editor.Key(Keys.Delete));
+            Assert.Single(doc.Items);
+            Assert.Null(editor.Selected);
+            editor.Undo();
+            Assert.Same(box, doc.Items[0]);
+            editor.Undo();
+            Assert.Equal(size, box.Size);
+            editor.Undo();
+            Assert.NotEqual(green.ToArgb(), box.Color.ToArgb());
+            editor.Undo();
+            Assert.Equal(new PointF(100, 100), box.Start);
+
+            // Clicking the middle of the empty rectangle selects nothing and moves the area instead.
+            Drag(150, 150, 150, 150);
+            Assert.Null(editor.Selected);
+
+            // Esc first deselects, then closes.
+            Drag(350, 300, 350, 300);
+            Assert.Same(arrow, editor.Selected);
+            editor.Key(Keys.Escape);
+            Assert.False(run.IsCompleted);
+            editor.Key(Keys.Escape);
+            Assert.Equal(EditAction.Cancel, run.Result.Action);
+        });
+    }
+
+    [Fact]
     public void Missing_font_falls_back_instead_of_failing()
     {
         var note = new TextNote { Text = "x", Size = 20, FontName = "No Such Font 123" };
