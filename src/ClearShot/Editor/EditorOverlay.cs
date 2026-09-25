@@ -230,6 +230,22 @@ internal sealed class EditorOverlay : IDisposable
     }
 
     public Rectangle Area => _area;
+
+    /// <summary>The monitor without its taskbar. Tests pass their own (their monitor is off-screen).</summary>
+    internal Rectangle? UsableAreaOverride { get; init; }
+
+    private Rectangle UsableArea
+    {
+        get
+        {
+            if (UsableAreaOverride is Rectangle given) return given;
+            var screen = Screen.AllScreens.FirstOrDefault(s => s.Bounds == _monitor);
+            return screen?.WorkingArea ?? _monitor;
+        }
+    }
+
+    /// <summary>Where the side bar and the action bar are on screen (for tests).</summary>
+    internal (Rectangle Tools, Rectangle Actions) BarBounds => (_tools.Bounds, _actions.Bounds);
     private readonly bool _forGif;
 
     /// <summary>Tests turn this off so running them never pulls focus away from what the user is doing.</summary>
@@ -270,24 +286,26 @@ internal sealed class EditorOverlay : IDisposable
         _dim.CutHole(_area);
         _canvas.Place(onScreen, _pad, _handle);
         int gap = (int)Math.Round(6 * _scale);
+        // Where bars can go: the monitor minus the taskbar, which would otherwise sit on top of them.
+        var room = UsableArea;
 
         // Side bar: right of the area, lined up with its bottom (like Lightshot); left if there's no room; inside as a last resort.
         var t = _tools.Size;
         int tx = onScreen.Right + gap;
-        if (tx + t.Width > _monitor.Right) tx = onScreen.Left - gap - t.Width;
-        if (tx < _monitor.Left) tx = onScreen.Right - gap - t.Width;
-        int ty = Math.Clamp(onScreen.Bottom - t.Height, _monitor.Top, Math.Max(_monitor.Top, _monitor.Bottom - t.Height));
+        if (tx + t.Width > room.Right) tx = onScreen.Left - gap - t.Width;
+        if (tx < room.Left) tx = Math.Min(onScreen.Right, room.Right) - gap - t.Width;
+        int ty = Math.Clamp(Math.Min(onScreen.Bottom, room.Bottom) - t.Height, room.Top, Math.Max(room.Top, room.Bottom - t.Height));
         _tools.Location = new Point(tx, ty);
 
         // Action bar: under the area, lined up with its right edge; above if there's no room; inside as a last resort.
         var a = _actions.Size;
         int ay = onScreen.Bottom + gap;
-        if (ay + a.Height > _monitor.Bottom) ay = onScreen.Top - gap - a.Height;
-        if (ay < _monitor.Top) ay = onScreen.Bottom - gap - a.Height;
-        int ax = Math.Clamp(onScreen.Right - a.Width, _monitor.Left, Math.Max(_monitor.Left, _monitor.Right - a.Width));
+        if (ay + a.Height > room.Bottom) ay = onScreen.Top - gap - a.Height;
+        if (ay < room.Top) ay = Math.Min(onScreen.Bottom, room.Bottom) - gap - a.Height;
+        int ax = Math.Clamp(onScreen.Right - a.Width, room.Left, Math.Max(room.Left, room.Right - a.Width));
         // If the side bar went inside the area too, keep the two from overlapping.
         var toolsRect = new Rectangle(_tools.Location, t);
-        if (toolsRect.IntersectsWith(new Rectangle(ax, ay, a.Width, a.Height))) ax = Math.Max(_monitor.Left, tx - gap - a.Width);
+        if (toolsRect.IntersectsWith(new Rectangle(ax, ay, a.Width, a.Height))) ax = Math.Max(room.Left, tx - gap - a.Width);
         _actions.Location = new Point(ax, ay);
     }
 

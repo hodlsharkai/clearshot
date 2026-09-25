@@ -434,6 +434,32 @@ public class EditorOverlayTests
         });
     }
 
+    /// <summary>A full-screen area: both bars must be inside the screen (over the picture), not off the edge.</summary>
+    [Fact]
+    public void Full_screen_area_keeps_both_bars_on_screen()
+    {
+        OnUiThread(() =>
+        {
+            foreach (var area in new[] { new Rectangle(0, 0, 800, 600), new Rectangle(0, 0, 800, 590), new Rectangle(5, 0, 795, 600) })
+            {
+                using var doc = new EditDocument(new Bitmap(800, 600));
+                // A 48 px taskbar along the bottom: nothing may end up underneath it.
+                var usable = Monitor with { Height = Monitor.Height - 48 };
+                using var editor = new EditorOverlay(doc, Monitor, area) { TakeFocus = false, UsableAreaOverride = usable };
+                var run = editor.RunAsync();
+                Pump();
+                var (tools, actions) = editor.BarBounds;
+                Assert.True(usable.Contains(tools), $"side bar under the taskbar: {tools}");
+                Assert.True(usable.Contains(actions), $"action bar under the taskbar: {actions}");
+                Console.WriteLine($"BARS area {area}: tools {tools}, actions {actions}");
+                Assert.True(Monitor.Contains(tools), $"side bar off screen: {tools}");
+                Assert.True(Monitor.Contains(actions), $"action bar off screen: {actions}");
+                Assert.False(tools.IntersectsWith(actions), "bars overlap");
+                editor.Finish(EditAction.Cancel);
+            }
+        });
+    }
+
     [Fact]
     public void Editing_a_gif_keeps_the_recorded_area_fixed()
     {
