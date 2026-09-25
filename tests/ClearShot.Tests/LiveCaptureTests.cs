@@ -44,9 +44,12 @@ public class LiveCaptureTests
         var primary = Screen.PrimaryScreen!.Bounds;
         var point = new Point(primary.X + 10, primary.Y + 10);
 
-        using var ours = ScreenCapturer.CaptureMonitorAt(point, keepHdr: true);
-        if (ours.Hdr is not { } hdr) { Console.WriteLine("LIVE: desktop is SDR, HDR comparison skipped"); return; }
+        // Windows' capture is taken just before and just after ours; only pixels identical in both are compared,
+        // so anything moving on screen (a video, a game) can't skew the result.
         using var windows = ScreenCapturer.CaptureWithGdi(ScreenCapturer.MonitorFromPoint(point, 2));
+        using var ours = ScreenCapturer.CaptureMonitorAt(point, keepHdr: true);
+        using var windowsAfter = ScreenCapturer.CaptureWithGdi(ScreenCapturer.MonitorFromPoint(point, 2));
+        if (ours.Hdr is not { } hdr) { Console.WriteLine("LIVE: desktop is SDR, HDR comparison skipped"); return; }
         float sdrWhiteNits = DisplayInfo.SdrWhiteScRgb(Screen.PrimaryScreen.DeviceName) * 80f;
 
         double diff = 0;
@@ -55,6 +58,7 @@ public class LiveCaptureTests
         for (int x = 0; x < hdr.Width; x += 7)
         {
             var b = windows.Image.GetPixel(x, y);
+            if (b != windowsAfter.Image.GetPixel(x, y)) continue;
             if (b.G < 60 || b.G > 240) continue;
             double linear = Math.Pow((b.G / 255.0 + 0.055) / 1.055, 2.4);
             double white = (float)hdr.Pixels[(y * hdr.Width + x) * 4 + 1] * 80.0 / linear;

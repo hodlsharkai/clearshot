@@ -26,11 +26,23 @@ internal static class GifWriter
     /// <summary>A pixel counts as changed once any channel moves more than this from what was last drawn.</summary>
     internal const int ChangeThreshold = 3;
 
-    // Tuned on real dark game footage (25/09) against gifski (max quality) and FFmpeg: this combination had the
-    // fewest blotches of any encoder tested and a quarter of FFmpeg's flicker, at a similar file size.
+    // Tuned on real dark game footage (25/09) against gifski (max quality) and FFmpeg, judged as seen on a normal
+    // screen and in Windows HDR mode: ahead of FFmpeg, close to gifski overall, fewest blotches, smallest files.
     private const float DitherStrength = 0.85f;
     private const int CacheBits = 7;
     private const double PaletteGamma = 0.6;
+
+    // Tuned for viewing in Windows HDR mode too, where near-black is shown much brighter than on a normal
+    // screen and dither grain there becomes visible (25/09). Settable for the benchmark harness.
+    /// <summary>Dither strength at black, ramping up to full by <see cref="DarkRampEnd"/> (the palette's fine
+    /// dark steps need little help there).</summary>
+    internal static float DarkDither = 0.3f;
+    internal static int DarkRampEnd = 48;
+    /// <summary>Dither only where it's needed: it fades out as local contrast rises past this many levels,
+    /// because detail already hides banding and dithering there only adds grain.</summary>
+    internal static float BusyScale = 3f;
+    /// <summary>k-means passes that tighten the Wu palette, so less dithering is needed.</summary>
+    internal static int RefinePasses = 4;
     private const byte Transparent = 255;
 
     public static void Save(Recording recording, string path)
@@ -166,10 +178,51 @@ internal static class GifWriter
         var quantizer = new WuQuantizer(new QuantizerOptions { Dither = null, MaxColors = 254 });
         using var frameQuantizer = quantizer.CreatePixelSpecificQuantizer<Rgba32>(Configuration.Default);
         using var indexed = frameQuantizer.BuildPaletteAndQuantizeFrame(sample.Frames.RootFrame, sample.Bounds);
-        var palette = indexed.Palette.ToArray().Select(c => new Rgba32(Unwarp[c.R], Unwarp[c.G], Unwarp[c.B], 255)).ToList();
+        var warped = indexed.Palette.ToArray();
+        if (RefinePasses > 0) Refine(warped, sample, RefinePasses);
+        var palette = warped.Select(c => new Rgba32(Unwarp[c.R], Unwarp[c.G], Unwarp[c.B], 255)).ToList();
         // Always offer true black. Otherwise black gets averaged in with nearby dark shades and comes out grey.
         if (!palette.Contains(new Rgba32(0, 0, 0, 255))) palette.Add(new Rgba32(0, 0, 0, 255));
         return palette.ToArray();
+    }
+
+    /// <summary>
+    /// A few k-means passes over a sample of the pixels: each colour moves to the average of the pixels
+    /// nearest it. Wu's split-the-box palette is a good start; this tightens it so less dithering is needed.
+    /// </summary>
+    private static void Refine(Rgba32[] palette, Image<Rgba32> sample, int passes)
+    {
+        var pixels = new List<Rgba32>();
+        int step = Math.Max(1, sample.Width * sample.Height / 60000);
+        sample.ProcessPixelRows(rows =>
+        {
+            int k = 0;
+            for (int y = 0; y < rows.Height; y++)
+                foreach (var px in rows.GetRowSpan(y))
+                    if (k++ % step == 0) pixels.Add(px);
+        });
+        var sums = new long[palette.Length * 3];
+        var counts = new int[palette.Length];
+        for (int pass = 0; pass < passes; pass++)
+        {
+            Array.Clear(sums);
+            Array.Clear(counts);
+            foreach (var px in pixels)
+            {
+                int best = 0, bestDist = int.MaxValue;
+                for (int i = 0; i < palette.Length; i++)
+                {
+                    int dr = palette[i].R - px.R, dg = palette[i].G - px.G, db = palette[i].B - px.B;
+                    int dist = 2 * dr * dr + 4 * dg * dg + 3 * db * db;
+                    if (dist < bestDist) { bestDist = dist; best = i; }
+                }
+                sums[best * 3] += px.R; sums[best * 3 + 1] += px.G; sums[best * 3 + 2] += px.B;
+                counts[best]++;
+            }
+            for (int i = 0; i < palette.Length; i++)
+                if (counts[i] > 0)
+                    palette[i] = new Rgba32((byte)(sums[i * 3] / counts[i]), (byte)(sums[i * 3 + 1] / counts[i]), (byte)(sums[i * 3 + 2] / counts[i]), 255);
+        }
     }
 
     // The palette is chosen in a space that stretches dark shades apart, so near-black gets more of the 255
@@ -214,7 +267,10 @@ internal static class GifWriter
                 int ci = nearest.Find(Clamp(r), Clamp(g), Clamp(b));
                 indices[o] = (byte)ci;
                 var c = palette[ci];
-                float er = Limit((r - c.R) * strength), eg = Limit((g - c.G) * strength), eb = Limit((b - c.B) * strength);
+                float level = Math.Max(r, Math.Max(g, b));
+                float k = level >= DarkRampEnd ? strength : DarkDither + (strength - DarkDither) * Math.Max(0, level) / DarkRampEnd;
+                if (BusyScale > 0) k *= Math.Max(0.2f, 1f - Busyness(src, stride, box, p) / BusyScale);
+                float er = Limit((r - c.R) * k), eg = Limit((g - c.G) * k), eb = Limit((b - c.B) * k);
                 int dir = leftToRight ? 1 : -1;
                 int ahead = (x + 1 + dir) * 3, behind = (x + 1 - dir) * 3;
                 Spread(errCur, ahead, er, eg, eb, 7f / 16);
@@ -225,6 +281,19 @@ internal static class GifWriter
             (errCur, errNext) = (errNext, errCur);
         }
         return indices;
+
+        // Largest luma step to the four neighbours: high on edges and busy texture, low in smooth gradients.
+        static float Busyness(byte[] src, int stride, System.Drawing.Rectangle box, int p)
+        {
+            int x = p % stride, y = p / stride;
+            float here = Luma(src, p), most = 0;
+            if (x > 0) most = Math.Max(most, Math.Abs(Luma(src, p - 1) - here));
+            if (x + 1 < stride) most = Math.Max(most, Math.Abs(Luma(src, p + 1) - here));
+            if (y > 0) most = Math.Max(most, Math.Abs(Luma(src, p - stride) - here));
+            if ((p + stride) * 4 < src.Length) most = Math.Max(most, Math.Abs(Luma(src, p + stride) - here));
+            return most;
+        }
+        static float Luma(byte[] s, int p) => 0.0722f * s[p * 4] + 0.7152f * s[p * 4 + 1] + 0.2126f * s[p * 4 + 2];
 
         static void Spread(float[] row, int at, float r, float g, float b, float share)
         {

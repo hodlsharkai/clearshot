@@ -25,9 +25,20 @@ public class GifBenchmarkTests
             im.CopyPixelDataTo(bytes);
             return new RecordedFrame(bytes, 33);
         }).ToList();
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        var path = Path.Combine(dir, "clearshot_final.gif");
-        GifWriter.Save(new Recording(frames, w, h), path);
-        Console.WriteLine($"BENCH: {frames.Count} frames {w}x{h} -> {new FileInfo(path).Length / 1024} KB in {sw.ElapsedMilliseconds} ms");
+        // Each variant: darkDither:darkRampEnd[:busyScale[:refinePasses]]; default = the shipped settings.
+        var variants = (Environment.GetEnvironmentVariable("CLEARSHOT_CMP_DARK") ?? "0.3:48:3:4").Split(',');
+        foreach (var v in variants)
+        {
+            var parts = v.Split(':');
+            GifWriter.DarkDither = float.Parse(parts[0], System.Globalization.CultureInfo.InvariantCulture);
+            GifWriter.DarkRampEnd = int.Parse(parts[1]);
+            GifWriter.BusyScale = parts.Length > 2 ? float.Parse(parts[2], System.Globalization.CultureInfo.InvariantCulture) : 0;
+            GifWriter.RefinePasses = parts.Length > 3 ? int.Parse(parts[3]) : 0;
+            var copy = frames.Select(f => new RecordedFrame((byte[])f.Bgra.Clone(), f.DurationMs)).ToList();
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var path = Path.Combine(dir, $"cs_{string.Join("_", parts)}.gif");
+            GifWriter.Save(new Recording(copy, w, h), path);
+            Console.WriteLine($"BENCH: {v} -> {new FileInfo(path).Length / 1024} KB in {sw.ElapsedMilliseconds} ms");
+        }
     }
 }
