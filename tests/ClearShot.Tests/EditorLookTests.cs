@@ -36,6 +36,14 @@ public class EditorLookTests
                 Drag(88, 385, 520, 520);
                 editor.PickTool(Tool.Pixelate);
                 Drag(100, 160, 190, 180);
+                if (Environment.GetEnvironmentVariable("CLEARSHOT_EDITOR_LOOK_ERASE") == "1")
+                {
+                    editor.PickTool(Tool.None);
+                    editor.PickTool(Tool.Pixelate); // tools toggle, so start from none
+                    Drag(88, 385, 520, 520);
+                    editor.PickTool(Tool.Eraser);
+                    Drag(95, 400, 250, 400);
+                }
                 editor.PickTool(Tool.Step);
                 Drag(560, 420, 560, 420);
                 Drag(560, 470, 560, 470);

@@ -159,6 +159,7 @@ internal sealed class EditorOverlay : IDisposable
         _doc = doc;
         _monitor = monitorBounds;
         _scale = Dpi.ScaleFor(monitorBounds);
+        EraserSize = (int)Math.Round(24 * _scale);
         _handle = Math.Max(6, (int)Math.Round(7 * _scale));
         _pad = _handle / 2 + 1;
         _gripReach = Math.Max(5, (int)Math.Round(6 * _scale));
@@ -187,6 +188,7 @@ internal sealed class EditorOverlay : IDisposable
             new("Font and bold", Icons.Font, ShowFonts),
             ToolItem(Tool.Step, "Numbered steps (N)", Icons.Step),
             ToolItem(Tool.Pixelate, "Pixelate: hide names, emails, addresses (B)", Icons.Pixelate),
+            ToolItem(Tool.Eraser, "Erase (X): rub out drawings and pixelation, to trim a pixelated area to shape. Scroll to change size", Icons.Eraser),
             new("Colour: for this tool, and recolours what you just drew or selected", Icons.Colour(() => _typing?.Color ?? _selected?.Color ?? Colour), ShowColours, SeparatorBefore: true),
             new("Undo (Ctrl+Z)", Icons.Undo, _ => Undo()),
         ]);
@@ -394,6 +396,11 @@ internal sealed class EditorOverlay : IDisposable
             case Tool.Rectangle:
                 _drawing = new RectangleShape { Color = Colour, Size = StrokeSize, Start = at, End = at };
                 break;
+            case Tool.Eraser:
+                var eraser = new EraserStroke { Size = EraserSize, Original = _doc.Original };
+                eraser.Points.Add(at);
+                _drawing = eraser;
+                break;
             case Tool.Pixelate:
                 _drawing = new PixelateBox { Start = at, End = at, BlockSize = Math.Max(10, (int)Math.Round(14 * _scale)) };
                 break;
@@ -472,6 +479,7 @@ internal sealed class EditorOverlay : IDisposable
             switch (_drawing)
             {
                 case Stroke s: s.Points.Add(at); break;
+                case EraserStroke e: e.Points.Add(at); break;
                 case LineShape l: l.End = at; break;
                 case RectangleShape r: r.End = at; break;
                 case PixelateBox x: x.End = at; break;
@@ -519,6 +527,7 @@ internal sealed class EditorOverlay : IDisposable
             _ => true,
         };
         if (worthKeeping) { _doc.Add(done); _lastDrawn = done; }
+        if (done is PixelateBox) UpdateHint(); // suggests Erase for trimming it to shape
         InvalidateImage(done.Bounds);
     }
 
@@ -551,6 +560,12 @@ internal sealed class EditorOverlay : IDisposable
                 _typing.Size = TextSize;
                 InvalidateImage(Rectangle.Union(before, _typing.Bounds));
             }
+        }
+        else if (Tool == Tool.Eraser)
+        {
+            var before = RingBounds();
+            EraserSize = Math.Clamp(EraserSize * (steps > 0 ? 1.15f : 1 / 1.15f), 4, 400);
+            InvalidateImage(Rectangle.Union(before, RingBounds()));
         }
         else
         {
@@ -613,12 +628,15 @@ internal sealed class EditorOverlay : IDisposable
     private Rectangle RingBounds()
     {
         if (_pointer is not Point p || _drawing is not null) return Rectangle.Empty;
-        if (Tool is not (Tool.Pen or Tool.Line or Tool.Arrow or Tool.Rectangle or Tool.Highlighter)) return Rectangle.Empty;
+        if (Tool is not (Tool.Pen or Tool.Line or Tool.Arrow or Tool.Rectangle or Tool.Highlighter or Tool.Eraser)) return Rectangle.Empty;
         int d = (int)Math.Ceiling(RingDiameter) + 6;
         return new Rectangle(p.X - d / 2, p.Y - d / 2, d, d);
     }
 
-    private float RingDiameter => Math.Max(4, Tool == Tool.Highlighter ? StrokeSize * 4 : StrokeSize);
+    private float RingDiameter => Math.Max(4, Tool == Tool.Highlighter ? StrokeSize * 4 : Tool == Tool.Eraser ? EraserSize : StrokeSize);
+
+    /// <summary>The eraser brush's size, in image pixels.</summary>
+    public float EraserSize { get; private set; } = 24;
 
     // ---- Keyboard -----------------------------------------------------------------------------------
 
@@ -668,6 +686,7 @@ internal sealed class EditorOverlay : IDisposable
             Keys.T => Tool.Text,
             Keys.N => Tool.Step,
             Keys.B => Tool.Pixelate,
+            Keys.X => Tool.Eraser,
             _ => null,
         };
         if (picked is Tool t) { PickTool(t); return true; }
@@ -706,6 +725,7 @@ internal sealed class EditorOverlay : IDisposable
         CommitText();
         Select(null);
         Tool = Tool == tool ? Tool.None : tool;
+        UpdateHint();
         _tools.Invalidate();
         _canvas.Invalidate();
     }
@@ -764,6 +784,7 @@ internal sealed class EditorOverlay : IDisposable
         RectangleShape => Tool.Rectangle,
         StepMarker => Tool.Step,
         TextNote => Tool.Text,
+        EraserStroke => Tool.Eraser,
         _ => Tool.Pixelate,
     };
 
@@ -854,6 +875,8 @@ internal sealed class EditorOverlay : IDisposable
         _typing is not null ? "Typing  ·  drag the corner square to resize  ·  Esc or click outside to finish"
         : _selected is LineShape or RectangleShape or PixelateBox ? "Selected  ·  drag a square to reshape  ·  drag to move  ·  scroll: thickness  ·  Delete: remove  ·  Esc: deselect"
         : _selected is not null ? "Selected  ·  drag to move  ·  scroll: size  ·  colour box: recolour  ·  Delete: remove  ·  Esc: deselect"
+        : Tool == Tool.Eraser ? "Erase  ·  drag to rub out drawings and pixelation  ·  scroll: eraser size  ·  Ctrl+Z: undo"
+        : Tool == Tool.Pixelate && _doc.Items.OfType<PixelateBox>().Any() ? "Tip: use Erase (X) to trim the pixelated area to the shape you want hidden"
         : "Enter: copy and save  ·  Esc or right-click: close  ·  Scroll: size");
 
     internal void Finish(EditAction action)

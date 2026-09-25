@@ -201,6 +201,14 @@ internal static class Icons
         g.DrawString("a", sans, b, 8f, 4.5f);
     }
 
+    public static void Eraser(Graphics g, Pen p, Brush b)
+    {
+        // A tilted eraser block with its rubbing end shaded, over a line.
+        g.DrawPolygon(p, [new PointF(6, 13), new PointF(2.5f, 9.5f), new PointF(9.5f, 2.5f), new PointF(13.5f, 6.5f), new PointF(7, 13)]);
+        g.FillPolygon(b, [new PointF(6, 13), new PointF(2.5f, 9.5f), new PointF(6, 6), new PointF(9.8f, 9.8f), new PointF(7, 13)]);
+        g.DrawLine(p, 8, 13.5f, 14, 13.5f);
+    }
+
     public static void Step(Graphics g, Pen p, Brush b)
     {
         g.DrawEllipse(p, 2, 2, 12, 12);

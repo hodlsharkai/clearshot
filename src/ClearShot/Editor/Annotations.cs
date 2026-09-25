@@ -4,7 +4,7 @@ using System.Drawing.Imaging;
 namespace ClearShot.Editor;
 
 /// <summary>The drawing tools in the editor's side bar. None means dragging inside the area moves it.</summary>
-internal enum Tool { None, Pen, Line, Arrow, Rectangle, Highlighter, Text, Step, Pixelate }
+internal enum Tool { None, Pen, Line, Arrow, Rectangle, Highlighter, Text, Step, Pixelate, Eraser }
 
 /// <summary>
 /// Something drawn on a screenshot. Coordinates are in the pixels of the captured monitor, so drawings stay
@@ -53,6 +53,53 @@ internal abstract class Annotation
 }
 
 /// <summary>Freehand pen, or a see-through highlighter.</summary>
+/// <summary>
+/// A round brush that rubs out whatever was drawn before it (pixelation, arrows, text), bringing back the original
+/// screenshot underneath. Drag a pixelate box, then erase around the part that should stay hidden.
+/// </summary>
+internal sealed class EraserStroke : Annotation
+{
+    public List<PointF> Points { get; } = [];
+
+    /// <summary>The untouched screenshot, painted back through the brush.</summary>
+    public Bitmap? Original { get; set; }
+
+    internal GraphicsPath Shape()
+    {
+        var path = new GraphicsPath();
+        if (Points.Count == 1)
+        {
+            path.AddEllipse(Points[0].X - Size / 2, Points[0].Y - Size / 2, Size, Size);
+            return path;
+        }
+        path.AddLines(Points.ToArray());
+        using var pen = new Pen(Color.Black, Size) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
+        path.Widen(pen);
+        return path;
+    }
+
+    public override void Draw(Graphics g, Bitmap target)
+    {
+        if (Original is null || Points.Count == 0) return;
+        using var shape = Shape();
+        var state = g.Save();
+        g.SetClip(shape, CombineMode.Intersect);
+        g.CompositingMode = CompositingMode.SourceCopy;
+        g.DrawImage(Original, 0, 0, Original.Width, Original.Height);
+        g.Restore(state);
+    }
+
+    public override Rectangle Bounds => Grow(Span(Points), Size / 2 + 2);
+
+    // Erasing isn't something to pick up and move: the Select tool looks straight through it.
+    public override bool Hit(PointF p, float tolerance) => false;
+
+    public override void Offset(float dx, float dy)
+    {
+        for (int i = 0; i < Points.Count; i++) Points[i] = new PointF(Points[i].X + dx, Points[i].Y + dy);
+    }
+}
+
 internal sealed class Stroke : Annotation
 {
     public const int HighlighterAlpha = 110;
@@ -340,6 +387,9 @@ internal sealed class EditDocument : IDisposable
     public IReadOnlyList<Annotation> Items => _items;
 
     public int NextStepNumber => _items.OfType<StepMarker>().Count() + 1;
+
+    /// <summary>The screenshot as captured, before any drawing (what the eraser brings back).</summary>
+    public Bitmap Original => _original;
 
     public void Add(Annotation item)
     {

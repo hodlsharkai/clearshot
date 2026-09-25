@@ -57,6 +57,30 @@ public class AnnotationTests
     }
 
     [Fact]
+    public void Eraser_brings_back_the_original_only_where_it_was_rubbed()
+    {
+        using var stripes = new Bitmap(120, 60, PixelFormat.Format32bppArgb);
+        for (int y = 0; y < 60; y++)
+        for (int x = 0; x < 120; x++)
+            stripes.SetPixel(x, y, x % 2 == 0 ? Color.White : Color.Black);
+        using var doc = new EditDocument(stripes);
+        doc.Add(new PixelateBox { Start = new(0, 0), End = new(112, 56), BlockSize = 14 });
+        var eraser = new EraserStroke { Size = 10, Original = doc.Original };
+        eraser.Points.AddRange([new(0, 28), new(112, 28)]);
+        doc.Add(eraser);
+
+        // Under the eraser: the original stripes again.
+        Assert.Equal(Color.White.ToArgb(), doc.Baked.GetPixel(40, 28).ToArgb());
+        Assert.Equal(Color.Black.ToArgb(), doc.Baked.GetPixel(41, 28).ToArgb());
+        // Away from it: still pixelated (neighbouring pixels identical).
+        Assert.Equal(doc.Baked.GetPixel(40, 5).ToArgb(), doc.Baked.GetPixel(41, 5).ToArgb());
+        Assert.Equal(doc.Baked.GetPixel(40, 50).ToArgb(), doc.Baked.GetPixel(41, 50).ToArgb());
+        // Undo puts the pixelation back.
+        doc.Undo();
+        Assert.Equal(doc.Baked.GetPixel(40, 28).ToArgb(), doc.Baked.GetPixel(41, 28).ToArgb());
+    }
+
+    [Fact]
     public void Steps_count_up_and_undo_takes_them_back()
     {
         using var doc = new EditDocument(Solid(300, 100, Color.Gray));
@@ -223,6 +247,38 @@ public class EditorOverlayTests
             Assert.Empty(doc.Items);
             editor.Key(Keys.Control | Keys.C);
             Assert.Equal(EditAction.Copy, run.Result.Action);
+        });
+    }
+
+    [Fact]
+    public void X_picks_the_eraser_and_select_looks_straight_through_it()
+    {
+        OnUiThread(() =>
+        {
+            using var doc = new EditDocument(new Bitmap(800, 600));
+            using var editor = new EditorOverlay(doc, Monitor, new Rectangle(100, 100, 300, 200)) { TakeFocus = false };
+            var run = editor.RunAsync();
+            Pump();
+            editor.PickTool(Tool.Pixelate);
+            editor.PointerDown(new Point(Monitor.X + 120, Monitor.Y + 120), MouseButtons.Left);
+            editor.PointerMove(new Point(Monitor.X + 300, Monitor.Y + 250), new Control());
+            editor.PointerUp();
+            Assert.True(editor.Key(Keys.X));
+            Assert.Equal(Tool.Eraser, editor.Tool);
+            editor.PointerDown(new Point(Monitor.X + 150, Monitor.Y + 180), MouseButtons.Left);
+            editor.PointerMove(new Point(Monitor.X + 280, Monitor.Y + 180), new Control());
+            editor.PointerUp();
+            Assert.Single(doc.Items.OfType<EraserStroke>());
+            float before = editor.EraserSize;
+            editor.Wheel(120);
+            Assert.True(editor.EraserSize > before);
+
+            // Clicking on the erased line with Select picks the pixelate box underneath, not the eraser.
+            editor.PickTool(Tool.None);
+            editor.PointerDown(new Point(Monitor.X + 200, Monitor.Y + 180), MouseButtons.Left);
+            editor.PointerUp();
+            Assert.IsType<PixelateBox>(editor.Selected);
+            editor.Finish(EditAction.Cancel);
         });
     }
 
