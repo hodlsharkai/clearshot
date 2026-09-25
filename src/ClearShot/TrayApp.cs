@@ -239,7 +239,7 @@ internal sealed class TrayApp : ApplicationContext
 
             var hmonitor = ScreenCapturer.MonitorFromPoint(new Point(monitor.X + monitor.Width / 2, monitor.Y + monitor.Height / 2), 2);
             var onScreen = box with { X = box.X + monitor.X, Y = box.Y + monitor.Y };
-            // Standard: small and quick, ideal for Discord. High: bigger, smoother, dithered colours.
+            // Standard: small and quick, ideal for Discord. High: bigger and smoother.
             bool high = _settings.GifQuality == "High";
             int fps = high ? 30 : 15, maxWidth = high ? 1920 : 960;
 
@@ -279,7 +279,7 @@ internal sealed class TrayApp : ApplicationContext
                 }
             }
             overlay.ShowSaving("Making your GIF…");
-            await Task.Run(() => GifMaker.Save(recording, path, dither: high));
+            await Task.Run(() => GifMaker.Save(recording, path));
             ClipboardOutput.CopyFile(path);
             if (_settings.PlaySound) _sound.Play();
 

@@ -201,6 +201,47 @@ public class LiveCaptureTests
         return 10000 * Math.Pow(Math.Max(p - c1, 0) / (c2 - c3 * p), 1 / m1);
     }
 
+    /// <summary>
+    /// GIF recording shrinks 4K HDR by averaging 2x2 blocks in linear light before tone mapping (for speed).
+    /// It must look the same as tone mapping at full size and then shrinking.
+    /// </summary>
+    [Fact]
+    public unsafe void Binned_hdr_matches_full_size_tone_mapping()
+    {
+        if (Environment.GetEnvironmentVariable("CLEARSHOT_LIVE") != "1") return;
+        SetProcessDpiAwarenessContext(new IntPtr(-4));
+        var primary = Screen.PrimaryScreen!.Bounds;
+        using var shot = ScreenCapturer.CaptureMonitorAt(new Point(primary.X + 10, primary.Y + 10), keepHdr: true);
+        if (shot.Hdr is not { } hdr) { Console.WriteLine("LIVE: desktop is SDR, binning check skipped"); return; }
+        var mapper = new HdrToneMapper(DisplayInfo.SdrWhiteScRgb(Screen.PrimaryScreen.DeviceName), 1.5f);
+        int w = hdr.Width, h = hdr.Height;
+        fixed (Half* p = hdr.Pixels)
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            using var binned = RegionRecorder.ToneMapBinned((IntPtr)p, w * 8, w, h, 2, mapper);
+            var binnedMs = sw.ElapsedMilliseconds;
+            sw.Restart();
+            using var full = ScreenCapturer.ToneMap((IntPtr)p, w * 8, w, h, mapper);
+            var fullMs = sw.ElapsedMilliseconds;
+            using var shrunk = new Bitmap(w / 2, h / 2);
+            using (var g = Graphics.FromImage(shrunk))
+            {
+                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBilinear;
+                g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+                g.DrawImage(full, new Rectangle(0, 0, w / 2, h / 2));
+            }
+            double diff = 0; long n = 0;
+            for (int y = 0; y < h / 2; y += 5)
+            for (int x = 0; x < w / 2; x += 5)
+            {
+                var a = binned.GetPixel(x, y); var b = shrunk.GetPixel(x, y);
+                diff += Math.Abs(a.R - b.R) + Math.Abs(a.G - b.G) + Math.Abs(a.B - b.B); n += 3;
+            }
+            Console.WriteLine($"LIVE: binned HDR {binnedMs} ms vs full {fullMs} ms per 4K frame; mean difference {diff / n:0.00} levels");
+            Assert.True(diff / n < 3, $"binned output differs by {diff / n:0.00} levels");
+        }
+    }
+
     /// <summary>Read-only: connects to Windows' media controls and lists what's playing. Pauses nothing.</summary>
     [Fact]
     public async Task Can_read_windows_media_sessions()

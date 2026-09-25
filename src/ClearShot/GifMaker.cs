@@ -3,7 +3,6 @@ using SixLabors.ImageSharp;
 using Image = SixLabors.ImageSharp.Image;
 using SixLabors.ImageSharp.Formats.Gif;
 using SixLabors.ImageSharp.PixelFormats;
-using SixLabors.ImageSharp.Processing;
 using SixLabors.ImageSharp.Processing.Processors.Quantization;
 
 namespace ClearShot;
@@ -11,13 +10,8 @@ namespace ClearShot;
 /// <summary>Turns a recording into a looping GIF. Uses ImageSharp (Apache 2.0 for open-source projects).</summary>
 internal static class GifMaker
 {
-    /// <param name="dither">
-    /// Off (Standard): cleanest for UI and text, and smallest. On (High): an ordered dither hides the colour
-    /// banding GIF's 256 colours cause in gradients, games and video. Ordered rather than error-diffusion
-    /// dithering, because its pattern stays put between frames instead of shimmering.
-    /// </param>
     /// <remarks>Each frame's pixels are released once added, so the recording isn't held in memory twice.</remarks>
-    public static void Save(Recording recording, string path, bool dither = false)
+    public static void Save(Recording recording, string path)
     {
         var delays = CentisecondDelays(recording.Frames.Select(f => f.DurationMs).ToArray());
         using var gif = Image.LoadPixelData<Bgra32>(recording.Frames[0].Bgra, recording.Width, recording.Height);
@@ -36,9 +30,11 @@ internal static class GifMaker
 
         var encoder = new GifEncoder
         {
-            // A palette per frame keeps colours right when the content changes.
+            // A palette per frame keeps colours right when the content changes. No dithering: measured on a dark
+            // game-like scene (25/09), ordered dithering was ~8x less accurate, speckled blacks with grey dots,
+            // shimmered and doubled the file size; plain Wu quantisation was best on every count.
             ColorTableMode = GifColorTableMode.Local,
-            Quantizer = new WuQuantizer(new QuantizerOptions { Dither = dither ? KnownDitherings.Bayer8x8 : null }),
+            Quantizer = new WuQuantizer(new QuantizerOptions { Dither = null }),
         };
         gif.SaveAsGif(path, encoder);
     }

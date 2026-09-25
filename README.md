@@ -39,7 +39,8 @@ The normal PNG is still what gets copied to the clipboard, because most apps can
 In the ClearShot window, under **GIFs**:
 
 - **Standard** (default): up to 960 px wide at 15 fps. Small files, ideal for Discord.
-- **High**: up to 1920 px wide at 30 fps, with dithering to smooth colour banding in games and video. Bigger files.
+- **High**: up to 1920 px wide at 30 fps. Bigger files.
+- For game and video footage, tick **Also save an MP4**: GIFs are limited to 256 colours per frame, MP4s aren't.
 - **Also save an MP4**: saves an MP4 next to the GIF, in full colour and much smaller. The GIF is still what gets copied.
 
 ## Download

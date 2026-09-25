@@ -115,7 +115,7 @@ internal sealed class SettingsForm : Form
 
         AddWide(grid, SectionTitle("GIFs"));
         AddRow(grid, "GIF quality", _gifQuality);
-        AddWide(grid, Hint("Standard: up to 960 px wide at 15 fps, small files, ideal for Discord. High: up to 1920 px at 30 fps with smoother colours, bigger files."));
+        AddWide(grid, Hint("Standard: up to 960 px wide at 15 fps, small files, ideal for Discord. High: up to 1920 px at 30 fps, bigger files. For game and video footage, the MP4 option looks far better than any GIF."));
         AddWide(grid, _saveMp4);
 
         AddWide(grid, SectionTitle("HDR mode"));

@@ -47,13 +47,13 @@ public class GifTests
     }
 
     [Fact]
-    public void High_quality_dithered_gif_is_valid_and_frees_frames_as_it_goes()
+    public void Gif_is_valid_and_frees_frames_as_it_goes()
     {
         var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".gif");
         try
         {
             var recording = Synthetic(3);
-            GifMaker.Save(recording, path, dither: true);
+            GifMaker.Save(recording, path);
             using var gif = ISImage.Load(path);
             Assert.Equal(3, gif.Frames.Count);
             Assert.Throws<InvalidOperationException>(() => recording.Frames[0].Bgra);
@@ -119,7 +119,7 @@ public class GifTests
             var mp4Ms = clock.ElapsedMilliseconds;
             clock.Restart();
             int frames = recording.Frames.Count, total = recording.TotalMs, w = recording.Width;
-            GifMaker.Save(recording, path, dither: fps == 30);
+            GifMaker.Save(recording, path);
             var encodeMs = clock.ElapsedMilliseconds;
             var mb = new FileInfo(path).Length / 1048576.0;
             var mp4Mb = new FileInfo(mp4).Length / 1048576.0;

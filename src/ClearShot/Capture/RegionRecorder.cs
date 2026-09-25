@@ -87,6 +87,8 @@ internal sealed class RegionRecorder(IntPtr monitor, Rectangle area, int fps, in
             double frameMs = 1000.0 / fps;
             double dueMs = 0;
             long bytesHeld = 0;
+            var busy = new Stopwatch(); // time spent copying and converting, to spot when a frame rate can't be kept
+            int captured = 0;
             bool stoppedEarly = false;
             try
             {
@@ -125,7 +127,10 @@ internal sealed class RegionRecorder(IntPtr monitor, Rectangle area, int fps, in
                                     });
                                     var box = new Vortice.Mathematics.Box(region.Left, region.Top, 0, region.Right, region.Bottom, 1);
                                     context!.CopySubresourceRegion(staging, 0, 0, 0, 0, texture, 0, box);
+                                    busy.Start();
                                     pixels = ReadScaled(context, staging, full.Format, region.Size, outW, outH, desc.DeviceName, ref toneMapper);
+                                    busy.Stop();
+                                    captured++;
                                 }
                             }
                         }
@@ -171,9 +176,48 @@ internal sealed class RegionRecorder(IntPtr monitor, Rectangle area, int fps, in
             double endMs = Math.Max(clock.Elapsed.TotalMilliseconds, shownAt[^1] + frameMs);
             for (int i = 0; i < frames.Count; i++)
                 frames[i].DurationMs = Math.Max(1, (int)Math.Round((i + 1 < frames.Count ? shownAt[i + 1] : endMs) - shownAt[i]));
-            Log.Write($"Recorded {frames.Count} distinct frames, {outW}x{outH}, {frames.Sum(f => f.DurationMs)} ms, HDR={toneMapper is not null}, stopped early={stoppedEarly}");
+            Log.Write($"Recorded {frames.Count} distinct frames, {outW}x{outH}, {frames.Sum(f => f.DurationMs)} ms, HDR={toneMapper is not null}, " +
+                      $"stopped early={stoppedEarly}, {(captured == 0 ? 0 : busy.ElapsedMilliseconds / (double)captured):0.0} ms per frame (budget {frameMs:0.0})");
             return new Recording(frames, outW, outH, stoppedEarly);
         }
+    }
+
+    /// <summary>Averages k×k blocks of scRGB pixels (linear light), then tone-maps the result.</summary>
+    internal static unsafe Bitmap ToneMapBinned(IntPtr src, int srcPitch, int width, int height, int k, HdrToneMapper mapper)
+    {
+        int bw = width / k, bh = height / k;
+        float inv = 1f / (k * k);
+        var bitmap = new Bitmap(bw, bh, PixelFormat.Format32bppArgb);
+        var data = bitmap.LockBits(new Rectangle(0, 0, bw, bh), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+        try
+        {
+            Parallel.For(0, bh, by =>
+            {
+                var to = (byte*)data.Scan0 + (long)by * data.Stride;
+                for (int bx = 0; bx < bw; bx++)
+                {
+                    float r = 0, g = 0, b = 0;
+                    for (int dy = 0; dy < k; dy++)
+                    {
+                        var row = (Half*)((byte*)src + (long)(by * k + dy) * srcPitch) + bx * k * 4;
+                        for (int dx = 0; dx < k; dx++, row += 4)
+                        {
+                            r += Math.Max(0f, (float)row[0]);
+                            g += Math.Max(0f, (float)row[1]);
+                            b += Math.Max(0f, (float)row[2]);
+                        }
+                    }
+                    var c = mapper.Map(r * inv, g * inv, b * inv);
+                    var o = to + bx * 4;
+                    o[0] = c.B; o[1] = c.G; o[2] = c.R; o[3] = 255;
+                }
+            });
+        }
+        finally
+        {
+            bitmap.UnlockBits(data);
+        }
+        return bitmap;
     }
 
     private static byte[] ReadScaled(ID3D11DeviceContext context, ID3D11Texture2D staging, Format format, Size size,
@@ -192,7 +236,13 @@ internal sealed class RegionRecorder(IntPtr monitor, Rectangle area, int fps, in
                     float highlights = ScreenCapturer.HighlightMax(mapped.DataPointer, (int)mapped.RowPitch, size.Width, size.Height, white);
                     toneMapper = new HdrToneMapper(white, Math.Max(highlights, 1.5f));
                 }
-                native = ScreenCapturer.ToneMap(mapped.DataPointer, (int)mapped.RowPitch, size.Width, size.Height, toneMapper);
+                // Shrinking by 2x or more (a 4K area into High's 1920 px): average blocks of pixels in linear light
+                // first, then tone-map the smaller image. A quarter of the work at 2x, and averaging light before
+                // tone mapping is the more accurate order anyway.
+                int k = Math.Max(1, size.Width / outW);
+                native = k >= 2
+                    ? ToneMapBinned(mapped.DataPointer, (int)mapped.RowPitch, size.Width, size.Height, k, toneMapper)
+                    : ScreenCapturer.ToneMap(mapped.DataPointer, (int)mapped.RowPitch, size.Width, size.Height, toneMapper);
             }
             else if (format == Format.B8G8R8A8_UNorm)
             {
@@ -209,7 +259,7 @@ internal sealed class RegionRecorder(IntPtr monitor, Rectangle area, int fps, in
         {
             Bitmap output = native;
             Bitmap? scaled = null;
-            if (outW != size.Width || outH != size.Height)
+            if (outW != native.Width || outH != native.Height)
             {
                 scaled = new Bitmap(outW, outH, PixelFormat.Format32bppArgb);
                 using var g = Graphics.FromImage(scaled);
