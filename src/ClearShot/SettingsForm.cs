@@ -10,7 +10,7 @@ internal sealed class SettingsForm : Form
     private readonly HotkeyBox _gif = new() { Dock = DockStyle.Fill };
     private readonly HotkeyBox _edit = new() { Dock = DockStyle.Fill };
     private readonly HotkeyBox _gifEdit = new() { Dock = DockStyle.Fill };
-    private readonly ComboBox _controller = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 300 };
+    private readonly ComboBox _controller = new() { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill };
     private readonly CheckBox _sound = new() { Text = "Play a shutter sound", AutoSize = true, Margin = CheckMargin };
     private readonly CheckBox _preview = new() { Text = "Show a small preview after each capture", AutoSize = true, Margin = CheckMargin };
     private readonly CheckBox _freeze = new() { Text = "Freeze the screen while picking a region", AutoSize = true, Margin = CheckMargin };
@@ -110,7 +110,8 @@ internal sealed class SettingsForm : Form
         AddRow(shortcuts, "Record a GIF", _gif);
         AddRow(shortcuts, "Record and edit a GIF", _gifEdit);
         AddRow(shortcuts, "Controller: full screen", _controller);
-        AddWide(shortcuts, Hint("Click a box, then press the keys you want. ClearShot works in games too. Capture and edit lets you draw arrows, text and numbered steps, hide details and pin the picture on screen before copying. The controller combination (hold both buttons) works in games too, with Xbox controllers and PlayStation ones through DS4Windows or Steam; the controller gives a short buzz when the shot is taken."));
+        _controller.Anchor = AnchorStyles.Left | AnchorStyles.Right; // the whole column, so the choice is never cut off
+        AddWide(shortcuts, Hint("Click a box, then press the keys you want. ClearShot works in games too. Capture and edit lets you draw arrows, text and numbered steps, hide details and pin the picture on screen before copying. The controller button works in games too, as well as the keyboard: the touchpad or Share button on its own, or two buttons held together. Xbox controllers, and PlayStation ones directly or through DS4Windows or Steam. Xbox controllers give a short buzz when the shot is taken."));
 
         var saving = Page();
         var browse = new Button { Text = "Change…", AutoSize = true };
@@ -327,10 +328,26 @@ internal sealed class SettingsForm : Form
         _pages.MinimumSize = biggest;
     }
 
+    // Label and field column widths at 100% scaling. Fixed widths aren't scaled by Windows Forms, so ScaleColumns does it
+    // (without this, labels wrapped and the controller choice was cut off at 125%).
+    private const int LabelColumn = 180, FieldColumn = 330;
+
+    private void ScaleColumns()
+    {
+        if (_pages is null) return;
+        float scale = DeviceDpi / 96f;
+        foreach (var page in _pages.Controls.OfType<TableLayoutPanel>())
+        {
+            page.ColumnStyles[0].Width = LabelColumn * scale;
+            page.ColumnStyles[1].Width = FieldColumn * scale;
+        }
+    }
+
     protected override void OnLoad(EventArgs e)
     {
         // After the window has been scaled for the display: measuring before gives unscaled sizes.
         base.OnLoad(e);
+        ScaleColumns();
         FitTallestTab();
     }
 
@@ -338,6 +355,7 @@ internal sealed class SettingsForm : Form
     {
         base.OnDpiChanged(e);
         // Moving to a monitor with different scaling resizes everything: measure again.
+        ScaleColumns();
         FitTallestTab();
     }
 
@@ -345,8 +363,8 @@ internal sealed class SettingsForm : Form
     private static TableLayoutPanel Page()
     {
         var page = new TableLayoutPanel { ColumnCount = 4, AutoSize = true, Dock = DockStyle.Top, Margin = Padding.Empty, MinimumSize = new Size(640, 0) };
-        page.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
-        page.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 300));
+        page.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, LabelColumn));
+        page.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, FieldColumn));
         page.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         page.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         return page;

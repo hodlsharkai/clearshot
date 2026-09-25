@@ -25,7 +25,9 @@ internal sealed class TrayApp : ApplicationContext
     private readonly ToolStripMenuItem _gifEditItem = new("Record and edit a GIF");
     private readonly List<PinWindow> _pins = [];
     private ControllerShortcut? _controller;
+    private SonyTouchpad? _sonyPad;
     private string _controllerChoice = "";
+    private long _lastControllerShot;
     // A hidden control, so signals from other threads (a second copy of ClearShot starting) reach the UI thread.
     private readonly Control _uiThread = new();
     private readonly RegisteredWaitHandle _showWait;
@@ -144,9 +146,28 @@ internal sealed class TrayApp : ApplicationContext
         _controllerChoice = _settings.ControllerShortcut;
         _controller?.Dispose();
         _controller = null;
+        _sonyPad?.Dispose();
+        _sonyPad = null;
         var combo = ControllerShortcut.ComboFor(_controllerChoice);
-        if (combo == ControllerShortcut.Buttons.None) return;
-        _controller = new ControllerShortcut(combo, () => _uiThread.BeginInvoke(async () => await Capture(region: false)));
+        if (combo != ControllerShortcut.Buttons.None) _controller = new ControllerShortcut(combo, ControllerShot);
+        if (ControllerShortcut.SonyFor(_controllerChoice) is { } button)
+        {
+            _sonyPad = new SonyTouchpad(button, ControllerShot);
+            _sonyPad.Blocked += () => _uiThread.BeginInvoke(() => _tray.ShowBalloonTip(15000, "ClearShot can't see your PlayStation controller",
+                "DS4Windows' HidHide is hiding it. Open HidHide Configuration Client, Applications tab, add ClearShot.exe, then restart ClearShot.",
+                ToolTipIcon.Info));
+        }
+    }
+
+    /// <summary>
+    /// A controller asked for a screenshot. The same press can arrive twice (a PlayStation pad read directly and through
+    /// DS4Windows), so presses within half a second of each other take one shot.
+    /// </summary>
+    private void ControllerShot()
+    {
+        long now = Environment.TickCount64;
+        if (now - Interlocked.Exchange(ref _lastControllerShot, now) < 500) return;
+        _uiThread.BeginInvoke(async () => await Capture(region: false));
     }
 
     private void Register(int id, string text, ToolStripMenuItem item, List<string> failed)
@@ -667,6 +688,7 @@ internal sealed class TrayApp : ApplicationContext
             _tray.Dispose();
             _hotkeys.Dispose();
             _controller?.Dispose();
+            _sonyPad?.Dispose();
             _sound.Dispose();
             _toast?.Dispose();
             foreach (var pin in _pins.ToArray()) pin.Dispose();

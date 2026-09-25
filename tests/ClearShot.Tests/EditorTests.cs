@@ -1084,3 +1084,62 @@ public class ControllerShortcutTests
         Thread.Sleep(100);
     }
 }
+
+public class ControllerButtonsTests
+{
+    [Fact]
+    public void Touchpad_and_share_are_read_from_playstation_reports()
+    {
+        // DualShock 4 over USB: byte 6 has Share (0x10), byte 7 the touchpad click (0x02).
+        var ds4 = new byte[64]; ds4[0] = 0x01;
+        Assert.False(SonyTouchpad.ButtonDown(false, ds4, SonyTouchpad.Button.Touchpad));
+        ds4[7] = 0x02 | 0x04; // touchpad + a report counter in the upper bits
+        Assert.True(SonyTouchpad.ButtonDown(false, ds4, SonyTouchpad.Button.Touchpad));
+        Assert.False(SonyTouchpad.ButtonDown(false, ds4, SonyTouchpad.Button.Share));
+        ds4[6] = 0x10;
+        Assert.True(SonyTouchpad.ButtonDown(false, ds4, SonyTouchpad.Button.Share));
+        // DualShock 4 over Bluetooth: two extra bytes in front.
+        var ds4bt = new byte[78]; ds4bt[0] = 0x11; ds4bt[9] = 0x02; ds4bt[8] = 0x10;
+        Assert.True(SonyTouchpad.ButtonDown(false, ds4bt, SonyTouchpad.Button.Touchpad));
+        Assert.True(SonyTouchpad.ButtonDown(false, ds4bt, SonyTouchpad.Button.Share));
+        // DualSense over USB (bytes 9/10) and Bluetooth (bytes 10/11).
+        var ds = new byte[64]; ds[0] = 0x01; ds[10] = 0x02; ds[9] = 0x10;
+        Assert.True(SonyTouchpad.ButtonDown(true, ds, SonyTouchpad.Button.Touchpad));
+        Assert.True(SonyTouchpad.ButtonDown(true, ds, SonyTouchpad.Button.Share));
+        var dsbt = new byte[78]; dsbt[0] = 0x31; dsbt[11] = 0x02;
+        Assert.True(SonyTouchpad.ButtonDown(true, dsbt, SonyTouchpad.Button.Touchpad));
+        Assert.False(SonyTouchpad.ButtonDown(true, dsbt, SonyTouchpad.Button.Share));
+        // Other reports (feature, output) are ignored.
+        var other = new byte[64]; other[0] = 0x05;
+        Assert.Null(SonyTouchpad.ButtonDown(false, other, SonyTouchpad.Button.Touchpad));
+    }
+
+    [Fact]
+    public void Single_button_choices_exist_and_share_uses_view_on_xbox()
+    {
+        Assert.Equal(SonyTouchpad.Button.Touchpad, ControllerShortcut.SonyFor("Touchpad"));
+        Assert.Equal(ControllerShortcut.Buttons.None, ControllerShortcut.ComboFor("Touchpad"));
+        Assert.Equal(ControllerShortcut.Buttons.View, ControllerShortcut.ComboFor("Share"));
+        Assert.Equal(SonyTouchpad.Button.Share, ControllerShortcut.SonyFor("Share"));
+        Assert.True(ControllerShortcut.JustPressed(ControllerShortcut.Buttons.View, 0, ControllerShortcut.Buttons.View));
+    }
+
+    [Fact]
+    public void Looking_for_playstation_controllers_starts_and_stops_cleanly()
+    {
+        using var pad = new SonyTouchpad(SonyTouchpad.Button.Touchpad, () => { });
+        Thread.Sleep(300);
+    }
+}
+
+public class SonyPathTests
+{
+    [Fact]
+    public void Recognises_playstation_controllers_by_path_over_usb_and_bluetooth()
+    {
+        Assert.True(SonyTouchpad.IsSonyPath(@"\\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&0002054c_pid&0df2#e&2e826681&2&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}"));
+        Assert.True(SonyTouchpad.IsSonyPath(@"\\?\hid#vid_054c&pid_0ce6&mi_03#8&1a2b3c&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}"));
+        Assert.False(SonyTouchpad.IsSonyPath(@"\\?\hid#vid_054c&pid_0268#1#{4d1e55b2}")); // a PS3 pad: not supported
+        Assert.False(SonyTouchpad.IsSonyPath(@"\\?\hid#vid_046d&pid_c52b#1#{4d1e55b2}"));
+    }
+}

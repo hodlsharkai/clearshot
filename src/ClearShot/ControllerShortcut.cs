@@ -18,17 +18,23 @@ internal sealed class ControllerShortcut : IDisposable
         LB = 0x0100, RB = 0x0200, A = 0x1000, B = 0x2000, X = 0x4000, Y = 0x8000,
     }
 
-    /// <summary>The combinations offered in Settings: value stored, label shown, buttons to hold together.</summary>
-    public static readonly (string Value, string Label, Buttons Combo)[] Choices =
+    /// <summary>
+    /// What's offered in Settings: value stored, label shown, the Xbox-style buttons to hold together (XInput), and the
+    /// PlayStation button read straight from a DualShock 4 or DualSense (for pads that aren't going through DS4Windows).
+    /// </summary>
+    public static readonly (string Value, string Label, Buttons Combo, SonyTouchpad.Button? Sony)[] Choices =
     [
-        ("Off", "Off", Buttons.None),
-        ("View+RB", "View + RB (Share + R1 on PlayStation)", Buttons.View | Buttons.RB),
-        ("View+LB", "View + LB (Share + L1 on PlayStation)", Buttons.View | Buttons.LB),
-        ("View+Menu", "View + Menu (Share + Options on PlayStation)", Buttons.View | Buttons.Menu),
-        ("Sticks", "Both stick clicks (L3 + R3)", Buttons.LeftStick | Buttons.RightStick),
+        ("Off", "Off", Buttons.None, null),
+        ("Touchpad", "Touchpad click (PlayStation)", Buttons.None, SonyTouchpad.Button.Touchpad),
+        ("Share", "Share / View button on its own", Buttons.View, SonyTouchpad.Button.Share),
+        ("View+RB", "View + RB (PS: Share + R1)", Buttons.View | Buttons.RB, null),
+        ("View+LB", "View + LB (PS: Share + L1)", Buttons.View | Buttons.LB, null),
+        ("View+Menu", "View + Menu (PS: Share + Options)", Buttons.View | Buttons.Menu, null),
+        ("Sticks", "Both stick clicks (L3 + R3)", Buttons.LeftStick | Buttons.RightStick, null),
     ];
 
     public static Buttons ComboFor(string? value) => Choices.FirstOrDefault(c => c.Value == value, Choices[0]).Combo;
+    public static SonyTouchpad.Button? SonyFor(string? value) => Choices.FirstOrDefault(c => c.Value == value, Choices[0]).Sony;
 
     private readonly Buttons _combo;
     private readonly Action _pressed;
