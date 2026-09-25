@@ -440,23 +440,58 @@ public class EditorOverlayTests
     {
         OnUiThread(() =>
         {
-            foreach (var area in new[] { new Rectangle(0, 0, 800, 600), new Rectangle(0, 0, 800, 590), new Rectangle(5, 0, 795, 600) })
+            // A full-size screen (the bars are drawn for the display scaling, up to 175% on a portrait monitor).
+            var screen = new Rectangle(-30000, -30000, 1920, 1080);
+            foreach (var area in new[] { new Rectangle(0, 0, 1920, 1080), new Rectangle(0, 0, 1920, 1070), new Rectangle(5, 0, 1915, 1080) })
             {
-                using var doc = new EditDocument(new Bitmap(800, 600));
+                using var doc = new EditDocument(new Bitmap(1920, 1080));
                 // A 48 px taskbar along the bottom: nothing may end up underneath it.
-                var usable = Monitor with { Height = Monitor.Height - 48 };
-                using var editor = new EditorOverlay(doc, Monitor, area) { TakeFocus = false, UsableAreaOverride = usable };
+                var usable = screen with { Height = screen.Height - 48 };
+                using var editor = new EditorOverlay(doc, screen, area) { TakeFocus = false, UsableAreaOverride = usable };
                 var run = editor.RunAsync();
                 Pump();
                 var (tools, actions) = editor.BarBounds;
-                Assert.True(usable.Contains(tools), $"side bar under the taskbar: {tools}");
-                Assert.True(usable.Contains(actions), $"action bar under the taskbar: {actions}");
                 Console.WriteLine($"BARS area {area}: tools {tools}, actions {actions}");
-                Assert.True(Monitor.Contains(tools), $"side bar off screen: {tools}");
-                Assert.True(Monitor.Contains(actions), $"action bar off screen: {actions}");
+                Assert.True(usable.Contains(tools), $"side bar under the taskbar or off screen: {tools}");
+                Assert.True(usable.Contains(actions), $"action bar under the taskbar or off screen: {actions}");
                 Assert.False(tools.IntersectsWith(actions), "bars overlap");
                 editor.Finish(EditAction.Cancel);
             }
+        });
+    }
+
+    [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
+    [DllImport("user32.dll")] private static extern IntPtr GetWindow(IntPtr hwnd, uint command);
+
+    /// <summary>True if <paramref name="above"/> is in front of <paramref name="below"/> on screen.</summary>
+    private static bool InFront(IntPtr above, IntPtr below)
+    {
+        for (var h = GetWindow(below, 3 /* GW_HWNDPREV: the window in front */); h != IntPtr.Zero; h = GetWindow(h, 3))
+            if (h == above) return true;
+        return false;
+    }
+
+    /// <summary>
+    /// 25/09: with a full-screen area the bars sit over the picture; clicking the picture brought it in front of them
+    /// and their buttons stopped working ("stuck on the eraser"). The bars must stay in front whatever happens.
+    /// </summary>
+    [Fact]
+    public void Bars_stay_in_front_of_the_picture_when_it_is_brought_forward()
+    {
+        OnUiThread(() =>
+        {
+            var screen = new Rectangle(-30000, -30000, 1920, 1080);
+            using var doc = new EditDocument(new Bitmap(1920, 1080));
+            using var editor = new EditorOverlay(doc, screen, new Rectangle(0, 0, 1920, 1080)) { TakeFocus = false, UsableAreaOverride = screen };
+            var run = editor.RunAsync();
+            Pump();
+            var (canvas, tools, actions) = editor.Handles;
+            // What a click on the picture does: bring it to the top.
+            SetWindowPos(canvas, IntPtr.Zero /* HWND_TOP */, 0, 0, 0, 0, 0x1 | 0x2 | 0x10 /* no size, no move, no activate */);
+            Pump();
+            Assert.True(InFront(tools, canvas), "side bar went behind the picture");
+            Assert.True(InFront(actions, canvas), "action bar went behind the picture");
+            editor.Finish(EditAction.Cancel);
         });
     }
 

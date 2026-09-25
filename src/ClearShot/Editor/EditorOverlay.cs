@@ -226,6 +226,13 @@ internal sealed class EditorOverlay : IDisposable
             new("Close (Esc)", Icons.Close, _ => Finish(EditAction.Cancel)),
         ]);
 
+        // The bars and the hint belong to the picture window, so Windows always keeps them in front of it. Without
+        // this, clicking the picture brought it over bars sitting inside a full-screen area, and their buttons stopped
+        // working (clicks went to the picture instead).
+        _tools.Owner = _canvas;
+        _actions.Owner = _canvas;
+        _hint.Owner = _canvas;
+
         SetArea(area);
     }
 
@@ -246,6 +253,9 @@ internal sealed class EditorOverlay : IDisposable
 
     /// <summary>Where the side bar and the action bar are on screen (for tests).</summary>
     internal (Rectangle Tools, Rectangle Actions) BarBounds => (_tools.Bounds, _actions.Bounds);
+
+    /// <summary>The window handles of the picture and the two bars (for tests).</summary>
+    internal (IntPtr Canvas, IntPtr Tools, IntPtr Actions) Handles => (_canvas.Handle, _tools.Handle, _actions.Handle);
     private readonly bool _forGif;
 
     /// <summary>Tests turn this off so running them never pulls focus away from what the user is doing.</summary>
