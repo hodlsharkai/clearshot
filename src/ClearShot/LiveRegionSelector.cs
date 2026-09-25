@@ -85,7 +85,7 @@ internal sealed class LiveRegionSelector : IDisposable
     private const int WsExNoActivate = 0x08000000, WsExToolWindow = 0x80, WsExTopmost = 0x8, WsExTransparent = 0x20, WsExLayered = 0x80000;
 
     /// <summary>Dark, see-through layer that catches the mouse. The box is a hole in it, so the inside is undimmed.</summary>
-    private sealed class DimLayer : Form
+    internal sealed class DimLayer : Form
     {
         private readonly Rectangle _full;
 

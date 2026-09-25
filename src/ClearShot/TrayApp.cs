@@ -1,12 +1,13 @@
 using System.Drawing.Imaging;
 using System.Runtime;
 using ClearShot.Capture;
+using ClearShot.Editor;
 
 namespace ClearShot;
 
 internal sealed class TrayApp : ApplicationContext
 {
-    private const int FullScreenId = 1, RegionId = 2, EscapeId = 3, GifId = 4;
+    private const int FullScreenId = 1, RegionId = 2, EscapeId = 3, GifId = 4, EditId = 5;
 
     private static readonly TimeSpan GifMaxLength = TimeSpan.FromSeconds(15);
     private const long DiscordFreeLimitBytes = 10 * 1024 * 1024;
@@ -20,6 +21,8 @@ internal sealed class TrayApp : ApplicationContext
     private readonly ToolStripMenuItem _fullScreenItem = new("Capture full screen");
     private readonly ToolStripMenuItem _regionItem = new("Capture region");
     private readonly ToolStripMenuItem _gifItem = new("Record a GIF");
+    private readonly ToolStripMenuItem _editItem = new("Capture and edit");
+    private readonly List<PinWindow> _pins = [];
     // A hidden control, so signals from other threads (a second copy of ClearShot starting) reach the UI thread.
     private readonly Control _uiThread = new();
     private readonly RegisteredWaitHandle _showWait;
@@ -40,6 +43,7 @@ internal sealed class TrayApp : ApplicationContext
         _fullScreenItem.Click += async (_, _) => await FromMenu(region: false);
         _regionItem.Click += async (_, _) => await FromMenu(region: true);
         _gifItem.Click += async (_, _) => { await Task.Delay(250); await RecordGif(); };
+        _editItem.Click += async (_, _) => { await Task.Delay(250); await CaptureAndEdit(); };
 
         var menu = new ContextMenuStrip();
         var openItem = new ToolStripMenuItem("Open ClearShot", null, (_, _) => ShowWindow()) { Font = new Font(menu.Font, FontStyle.Bold) };
@@ -47,6 +51,7 @@ internal sealed class TrayApp : ApplicationContext
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_fullScreenItem);
         menu.Items.Add(_regionItem);
+        menu.Items.Add(_editItem);
         menu.Items.Add(_gifItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Open screenshots folder", null, (_, _) => OpenFolder(_settings.SaveFolder));
@@ -68,6 +73,7 @@ internal sealed class TrayApp : ApplicationContext
         {
             if (id == EscapeId) { _cancelSelection?.Invoke(); _gifStop?.Cancel(); return; }
             if (id == GifId) { await RecordGif(); return; }
+            if (id == EditId) { await CaptureAndEdit(); return; }
             await Capture(region: id == RegionId);
         };
         Task.Run(ScreenCapturer.WarmUp);
@@ -93,6 +99,7 @@ internal sealed class TrayApp : ApplicationContext
         Register(FullScreenId, _settings.FullScreenHotkey, _fullScreenItem, failed);
         Register(RegionId, _settings.RegionHotkey, _regionItem, failed);
         Register(GifId, _settings.GifHotkey, _gifItem, failed);
+        Register(EditId, _settings.EditHotkey, _editItem, failed);
         // Only speak up once per problem, not every time the window is opened or a box is clicked.
         var problem = string.Join("|", failed);
         if (problem == _lastAnnouncedProblem) return;
@@ -215,6 +222,126 @@ internal sealed class TrayApp : ApplicationContext
             // A 4K capture briefly needs a few hundred MB; hand it back now rather than sitting on it in the tray.
             GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
             GC.Collect();
+        }
+    }
+
+    /// <summary>
+    /// Lightshot-style: pick an area on the live screen, then draw on it (arrows, text, steps, pixelate)
+    /// before copying, saving or pinning it. The normal region shortcut stays instant.
+    /// </summary>
+    private async Task CaptureAndEdit()
+    {
+        if (_busy) return;
+        _busy = true;
+        CaptureResult? shot = null;
+        EditDocument? doc = null;
+        Bitmap? result = null;
+        try
+        {
+            var monitor = Screen.FromPoint(Cursor.Position).Bounds;
+            Rectangle? chosen;
+            using (var live = new LiveRegionSelector(monitor))
+                chosen = await SelectWithEscape(live.SelectAsync, live.Cancel);
+            if (chosen is not Rectangle box) return;
+            await Task.Run(() => { DwmFlush(); DwmFlush(); });
+
+            bool wantHdr = _settings.SaveHdrJxr || _settings.SaveHdrPng;
+            var centre = new Point(monitor.X + monitor.Width / 2, monitor.Y + monitor.Height / 2);
+            shot = await Task.Run(() => ScreenCapturer.CaptureMonitorAt(centre, wantHdr));
+            // The picker works in this monitor's pixels; the capture's bounds are the same monitor.
+            var area = box with { X = box.X + monitor.X - shot.Bounds.X, Y = box.Y + monitor.Y - shot.Bounds.Y };
+            area.Intersect(new Rectangle(Point.Empty, shot.Image.Size));
+            if (area.Width < 1 || area.Height < 1) return;
+
+            doc = new EditDocument(shot.Image);
+            EditOutcome outcome;
+            using (var editor = new EditorOverlay(doc, shot.Bounds, area))
+            {
+                // Esc must always get you out, even if another app has grabbed the keyboard:
+                // catch it system-wide while the editor is open (except while a colour or font dialog needs it).
+                bool HookEscape() => Hotkey.TryParse("Escape", out var esc) && _hotkeys.Register(EscapeId, esc);
+                _cancelSelection = () => editor.Key(Keys.Escape);
+                HookEscape();
+                editor.DialogOpen += open =>
+                {
+                    if (open) _hotkeys.Unregister(EscapeId);
+                    else HookEscape();
+                };
+                try
+                {
+                    outcome = await editor.RunAsync();
+                }
+                finally
+                {
+                    _cancelSelection = null;
+                    _hotkeys.Unregister(EscapeId);
+                }
+            }
+            if (outcome.Action == EditAction.Cancel) return;
+
+            var final = outcome.Area;
+            result = doc.Render(final);
+            if (outcome.Action == EditAction.Pin)
+            {
+                var pin = new PinWindow(result, new Point(shot.Bounds.X + final.X - 1, shot.Bounds.Y + final.Y - 1), SaveFromPin);
+                result = null; // the pin owns it now
+                _pins.Add(pin);
+                pin.FormClosed += (_, _) => { _pins.Remove(pin); pin.Dispose(); };
+                pin.Show();
+                pin.Activate();
+                return;
+            }
+
+            bool copy = outcome.Action is EditAction.Copy or EditAction.Done;
+            bool save = outcome.Action is EditAction.Save or EditAction.Done;
+            if (_settings.PlaySound) _sound.Play();
+            var png = await Task.Run(() => ClipboardOutput.EncodePng(result));
+            string path = "";
+            if (save)
+            {
+                Directory.CreateDirectory(_settings.SaveFolder);
+                path = FileNamer.UniquePath(_settings.SaveFolder, DateTime.Now);
+                await File.WriteAllBytesAsync(path, png);
+            }
+            if (copy) ClipboardOutput.Copy(result, png);
+
+            var hdr = save ? shot.Hdr?.Crop(final) : null;
+            var what = copy && save ? "Copied and saved" : copy ? "Copied" : "Saved";
+            var caption = $"{what}  ·  {result.Width} × {result.Height}" + (hdr is not null ? "  ·  HDR copy without drawings" : "");
+            if (_settings.ShowPreview) ShowPreview(result, path, shot.Bounds, hdrCopy: hdr is not null, caption);
+            if (hdr is not null) await SaveHdrCopies(hdr, path);
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"Capture and edit failed: {ex}");
+            _tray.ShowBalloonTip(5000, "Screenshot failed", ex.Message, ToolTipIcon.Warning);
+        }
+        finally
+        {
+            result?.Dispose();
+            doc?.Dispose();
+            shot?.Dispose();
+            _busy = false;
+            GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+            GC.Collect();
+        }
+    }
+
+    private string? SaveFromPin(Bitmap image)
+    {
+        try
+        {
+            Directory.CreateDirectory(_settings.SaveFolder);
+            var path = FileNamer.UniquePath(_settings.SaveFolder, DateTime.Now);
+            image.Save(path, ImageFormat.Png);
+            if (_settings.ShowPreview) ShowPreview(image, path, Screen.FromPoint(Cursor.Position).Bounds, hdrCopy: false, $"Saved  ·  {image.Width} × {image.Height}");
+            return path;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"Pin save failed: {ex}");
+            _tray.ShowBalloonTip(5000, "Couldn't save", ex.Message, ToolTipIcon.Warning);
+            return null;
         }
     }
 
@@ -466,6 +593,7 @@ internal sealed class TrayApp : ApplicationContext
             _hotkeys.Dispose();
             _sound.Dispose();
             _toast?.Dispose();
+            foreach (var pin in _pins.ToArray()) pin.Dispose();
         }
         base.Dispose(disposing);
     }

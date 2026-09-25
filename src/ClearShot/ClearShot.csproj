@@ -13,7 +13,7 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <AssemblyName>ClearShot</AssemblyName>
     <RootNamespace>ClearShot</RootNamespace>
-    <Version>1.3.1</Version>
+    <Version>1.4.0</Version>
     <Product>ClearShot</Product>
     <Description>Private screenshot tool. No account, no uploads.</Description>
     <Copyright>MIT licence</Copyright>
