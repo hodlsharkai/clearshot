@@ -152,12 +152,17 @@ internal sealed class SettingsForm : Form
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         footer.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        var links = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Anchor = AnchorStyles.Left, Margin = Padding.Empty };
+        var help = new LinkLabel { Text = "How to use", AutoSize = true, Margin = new Padding(3, 3, 16, 3) };
+        help.LinkClicked += (_, _) => HelpForm.ShowFor(_settings, this);
+        links.Controls.Add(help);
         if (AppInfo.ActiveDonations.Count > 0)
         {
-            var donate = new LinkLabel { Text = "Buy me a beer", AutoSize = true, Anchor = AnchorStyles.Left };
+            var donate = new LinkLabel { Text = "Buy me a beer", AutoSize = true };
             donate.LinkClicked += (_, _) => DonateForm.ShowFor(AppInfo.ActiveDonations, this);
-            footer.Controls.Add(donate, 0, 0);
+            links.Controls.Add(donate);
         }
+        footer.Controls.Add(links, 0, 0);
         footer.Controls.Add(close, 1, 0);
         AddWide(grid, footer);
 

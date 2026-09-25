@@ -544,3 +544,31 @@ public class TextEditingTests
         Assert.NotNull(font);
     }
 }
+
+public class HelpFormTests
+{
+    [Fact]
+    public void Help_shows_the_users_own_shortcuts_and_every_tool_key()
+    {
+        Exception? failure = null;
+        var t = new Thread(() =>
+        {
+            try
+            {
+                using var form = new HelpForm(new Settings { RegionHotkey = "Ctrl+Shift+C" });
+                static IEnumerable<Control> All(Control c) => c.Controls.Cast<Control>().SelectMany(x => new[] { x }.Concat(All(x)));
+                var texts = All(form).OfType<Label>().Select(l => l.Text).ToList();
+                Assert.Contains(texts, s => s.Contains("Ctrl") && s.Contains("Shift") && s.Contains('C') && !s.Contains("Alt"));
+                foreach (var key in new[] { "V", "P", "R", "H", "T", "N", "B", "Enter", "Esc" })
+                    Assert.Contains(key, texts);
+                // Reachable: a "How to use" link in the main window.
+                using var settingsForm = new SettingsForm(new Settings());
+                Assert.Contains(All(settingsForm).OfType<LinkLabel>(), l => l.Text == "How to use");
+            }
+            catch (Exception ex) { failure = ex; }
+        });
+        t.SetApartmentState(ApartmentState.STA);
+        t.Start(); t.Join();
+        if (failure is not null) throw failure;
+    }
+}

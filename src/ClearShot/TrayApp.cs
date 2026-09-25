@@ -55,6 +55,7 @@ internal sealed class TrayApp : ApplicationContext
         menu.Items.Add(_gifItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Open screenshots folder", null, (_, _) => OpenFolder(_settings.SaveFolder));
+        menu.Items.Add("How to use", null, (_, _) => HelpForm.ShowFor(_settings));
         if (AppInfo.ActiveDonations.Count > 0)
             menu.Items.Add("Buy me a beer", null, (_, _) => DonateForm.ShowFor(AppInfo.ActiveDonations));
         menu.Items.Add(new ToolStripSeparator());
