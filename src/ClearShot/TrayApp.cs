@@ -24,6 +24,8 @@ internal sealed class TrayApp : ApplicationContext
     private readonly ToolStripMenuItem _editItem = new("Capture and edit");
     private readonly ToolStripMenuItem _gifEditItem = new("Record and edit a GIF");
     private readonly List<PinWindow> _pins = [];
+    private ControllerShortcut? _controller;
+    private string _controllerChoice = "";
     // A hidden control, so signals from other threads (a second copy of ClearShot starting) reach the UI thread.
     private readonly Control _uiThread = new();
     private readonly RegisteredWaitHandle _showWait;
@@ -105,6 +107,7 @@ internal sealed class TrayApp : ApplicationContext
 
     private void RegisterHotkeys(bool announceProblems)
     {
+        UpdateController();
         var failed = new List<string>();
         Register(FullScreenId, _settings.FullScreenHotkey, _fullScreenItem, failed);
         Register(RegionId, _settings.RegionHotkey, _regionItem, failed);
@@ -132,6 +135,18 @@ internal sealed class TrayApp : ApplicationContext
         {
             MessageBox.Show(message + "\n\nPick a different shortcut in ClearShot settings.", AppInfo.Name, MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
+    }
+
+    /// <summary>Starts, changes or stops watching the controller to match the setting.</summary>
+    private void UpdateController()
+    {
+        if (_settings.ControllerShortcut == _controllerChoice) return;
+        _controllerChoice = _settings.ControllerShortcut;
+        _controller?.Dispose();
+        _controller = null;
+        var combo = ControllerShortcut.ComboFor(_controllerChoice);
+        if (combo == ControllerShortcut.Buttons.None) return;
+        _controller = new ControllerShortcut(combo, () => _uiThread.BeginInvoke(async () => await Capture(region: false)));
     }
 
     private void Register(int id, string text, ToolStripMenuItem item, List<string> failed)
@@ -596,7 +611,11 @@ internal sealed class TrayApp : ApplicationContext
             open.Close();
             ShowWindow(keep, where);
         });
-        _settingsForm.SettingsChanged += TrySaveSettings;
+        _settingsForm.SettingsChanged += () =>
+        {
+            TrySaveSettings();
+            UpdateController(); // a new controller combination works straight away
+        };
         // While a shortcut box is recording, pressing a shortcut should record it, not take a screenshot.
         _settingsForm.RecordingShortcut += recording =>
         {
@@ -647,6 +666,7 @@ internal sealed class TrayApp : ApplicationContext
             _tray.Visible = false;
             _tray.Dispose();
             _hotkeys.Dispose();
+            _controller?.Dispose();
             _sound.Dispose();
             _toast?.Dispose();
             foreach (var pin in _pins.ToArray()) pin.Dispose();

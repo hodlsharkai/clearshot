@@ -42,6 +42,8 @@ internal sealed class HelpForm : Form
         Row(grid, Key(settings.EditHotkey), "Drag a box, then draw on it before copying or saving.");
         Row(grid, Key(settings.GifHotkey), "Record a GIF: drag a box, press the shortcut again to stop. Up to 15 seconds.");
         Row(grid, Key(settings.GifEditHotkey), "Record a GIF, then add text, arrows, emoji or pixelation before saving. Drawings go on every frame.");
+        if (ControllerShortcut.ComboFor(settings.ControllerShortcut) != ControllerShortcut.Buttons.None)
+            Row(grid, ControllerShortcut.Choices.First(c => c.Value == settings.ControllerShortcut).Label.Split(" (")[0], "On a controller: a full-screen screenshot. The controller buzzes when it's taken.");
         Note(grid, "Every capture is copied, ready to paste, and saved as a PNG. Change the shortcuts in the ClearShot window.");
 
         Section(grid, "Drawing tools (capture and edit)");

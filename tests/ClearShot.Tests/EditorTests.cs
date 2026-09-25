@@ -1058,3 +1058,29 @@ public class KeyboardGrabTests
         Assert.Equal(" ", KeyboardGrab.Characters(0x20, 0x39));
     }
 }
+
+public class ControllerShortcutTests
+{
+    private const ControllerShortcut.Buttons View = ControllerShortcut.Buttons.View, RB = ControllerShortcut.Buttons.RB, A = ControllerShortcut.Buttons.A;
+
+    [Fact]
+    public void Combination_fires_once_when_completed_not_while_held()
+    {
+        var combo = ControllerShortcut.ComboFor("View+RB");
+        Assert.Equal(View | RB, combo);
+        Assert.False(ControllerShortcut.JustPressed(combo, 0, View));                // only one of the two
+        Assert.True(ControllerShortcut.JustPressed(combo, View, View | RB));         // hold View, press RB
+        Assert.True(ControllerShortcut.JustPressed(combo, RB, View | RB | A));       // extra buttons don't matter
+        Assert.False(ControllerShortcut.JustPressed(combo, View | RB, View | RB));   // still held: no second shot
+        Assert.True(ControllerShortcut.JustPressed(combo, View, View | RB));         // released RB and pressed again: another
+        Assert.False(ControllerShortcut.JustPressed(ControllerShortcut.ComboFor("Off"), 0, View | RB));
+        Assert.Equal("Off", new Settings().ControllerShortcut);                      // off unless chosen
+    }
+
+    [Fact]
+    public void Watching_starts_and_stops_cleanly_with_or_without_a_controller()
+    {
+        using var watcher = new ControllerShortcut(ControllerShortcut.ComboFor("View+RB"), () => { });
+        Thread.Sleep(100);
+    }
+}

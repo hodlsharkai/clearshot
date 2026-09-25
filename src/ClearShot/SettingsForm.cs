@@ -10,6 +10,7 @@ internal sealed class SettingsForm : Form
     private readonly HotkeyBox _gif = new() { Dock = DockStyle.Fill };
     private readonly HotkeyBox _edit = new() { Dock = DockStyle.Fill };
     private readonly HotkeyBox _gifEdit = new() { Dock = DockStyle.Fill };
+    private readonly ComboBox _controller = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 300 };
     private readonly CheckBox _sound = new() { Text = "Play a shutter sound", AutoSize = true, Margin = CheckMargin };
     private readonly CheckBox _preview = new() { Text = "Show a small preview after each capture", AutoSize = true, Margin = CheckMargin };
     private readonly CheckBox _freeze = new() { Text = "Freeze the screen while picking a region", AutoSize = true, Margin = CheckMargin };
@@ -62,6 +63,8 @@ internal sealed class SettingsForm : Form
         _gif.Value = Parse(shown.GifHotkey, "Alt+G");
         _edit.Value = Parse(shown.EditHotkey, "Alt+Shift+E");
         _gifEdit.Value = Parse(shown.GifEditHotkey, "Alt+Shift+G");
+        _controller.Items.AddRange(ControllerShortcut.Choices.Select(c => c.Label).ToArray());
+        _controller.SelectedIndex = Math.Max(0, Array.FindIndex(ControllerShortcut.Choices, c => c.Value == shown.ControllerShortcut));
         _sound.Checked = shown.PlaySound;
         _preview.Checked = shown.ShowPreview;
         _pauseMedia.Checked = shown.PauseMediaWhileSelecting;
@@ -79,6 +82,7 @@ internal sealed class SettingsForm : Form
         foreach (var box in new[] { _sound, _preview, _freeze, _pauseMedia, _saveMp4, _hdrJxr, _hdrPng })
             box.CheckedChanged += (_, _) => ApplyChange();
         _gifQuality.SelectedIndexChanged += (_, _) => ApplyChange();
+        _controller.SelectedIndexChanged += (_, _) => ApplyChange();
         _startup.CheckedChanged += (_, _) =>
         {
             try { StartupRegistration.Set(_startup.Checked); }
@@ -105,7 +109,8 @@ internal sealed class SettingsForm : Form
         AddRow(shortcuts, "Capture and edit", _edit);
         AddRow(shortcuts, "Record a GIF", _gif);
         AddRow(shortcuts, "Record and edit a GIF", _gifEdit);
-        AddWide(shortcuts, Hint("Click a box, then press the keys you want. ClearShot works in games too. Capture and edit lets you draw arrows, text and numbered steps, hide details and pin the picture on screen before copying."));
+        AddRow(shortcuts, "Controller: full screen", _controller);
+        AddWide(shortcuts, Hint("Click a box, then press the keys you want. ClearShot works in games too. Capture and edit lets you draw arrows, text and numbered steps, hide details and pin the picture on screen before copying. The controller combination (hold both buttons) works in games too, with Xbox controllers and PlayStation ones through DS4Windows or Steam; the controller gives a short buzz when the shot is taken."));
 
         var saving = Page();
         var browse = new Button { Text = "Change…", AutoSize = true };
@@ -217,6 +222,7 @@ internal sealed class SettingsForm : Form
         GifHotkey = _gif.Value.ToString(),
         EditHotkey = _edit.Value.ToString(),
         GifEditHotkey = _gifEdit.Value.ToString(),
+        ControllerShortcut = ControllerShortcut.Choices[Math.Max(0, _controller.SelectedIndex)].Value,
         PlaySound = _sound.Checked,
         ShowPreview = _preview.Checked,
         PauseMediaWhileSelecting = _pauseMedia.Checked,
@@ -411,6 +417,7 @@ internal sealed class SettingsForm : Form
         _settings.GifHotkey = _gif.Value.ToString();
         _settings.EditHotkey = _edit.Value.ToString();
         _settings.GifEditHotkey = _gifEdit.Value.ToString();
+        _settings.ControllerShortcut = ControllerShortcut.Choices[Math.Max(0, _controller.SelectedIndex)].Value;
         _settings.PlaySound = _sound.Checked;
         _settings.ShowPreview = _preview.Checked;
         _settings.PauseMediaWhileSelecting = _pauseMedia.Checked;

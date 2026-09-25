@@ -20,6 +20,8 @@ internal sealed class Settings
     public string GifHotkey { get; set; } = "Alt+G";
     public string EditHotkey { get; set; } = "Alt+Shift+E";
     public string GifEditHotkey { get; set; } = "Alt+Shift+G";
+    /// <summary>A controller button combination that takes a full-screen screenshot, as well as the keyboard. Off by default.</summary>
+    public string ControllerShortcut { get; set; } = "Off";
     public string GifQuality { get; set; } = "Standard";
     public bool SaveMp4 { get; set; }
     public bool PlaySound { get; set; } = true;
