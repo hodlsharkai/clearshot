@@ -92,7 +92,7 @@ dotnet test
 dotnet publish src/ClearShot/ClearShot.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -o publish
 ```
 
-`CLEARSHOT_LIVE=1` also runs the tests that capture the real screen. Pushing a tag such as `v1.4.0` makes GitHub Actions build, test and publish `ClearShot.exe` to Releases.
+`CLEARSHOT_LIVE=1` also runs the tests that capture the real screen. Pushing a tag such as `v1.0.0` makes GitHub Actions build, test and publish `ClearShot.exe` to Releases.
 
 ## Buy me a beer
 
