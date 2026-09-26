@@ -93,46 +93,72 @@ internal sealed class SettingsForm : Form
             };
         }
 
-        var grid = new TableLayoutPanel { ColumnCount = 4, AutoSize = true, Dock = DockStyle.Fill };
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 300));
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        var grid = new TableLayoutPanel { ColumnCount = 1, AutoSize = true, Dock = DockStyle.Fill };
+        grid.Controls.Add(Header());
 
-        AddWide(grid, Header());
+        // Tabs: a row of toggle buttons rather than a TabControl, which doesn't follow dark mode.
+        var shortcuts = Page();
+        AddRow(shortcuts, "Full screen", _fullScreen);
+        AddRow(shortcuts, "Pick a region", _region);
+        AddRow(shortcuts, "Capture and edit", _edit);
+        AddRow(shortcuts, "Record a GIF", _gif);
+        AddWide(shortcuts, Hint("Click a box, then press the keys you want. ClearShot works in games too. Capture and edit lets you draw arrows, text and numbered steps, hide details and pin the picture on screen before copying."));
 
-        AddWide(grid, SectionTitle("Shortcuts"));
-        AddRow(grid, "Full screen", _fullScreen);
-        AddRow(grid, "Pick a region", _region);
-        AddRow(grid, "Capture and edit", _edit);
-        AddRow(grid, "Record a GIF", _gif);
-        AddWide(grid, Hint("Click a box, then press the keys you want. ClearShot works in games too. Capture and edit lets you draw arrows, text and numbered steps, hide details and pin the picture on screen before copying."));
-
-        AddWide(grid, SectionTitle("Saving"));
+        var saving = Page();
         var browse = new Button { Text = "Change…", AutoSize = true };
         browse.Click += (_, _) => ChooseFolder();
         var open = new Button { Text = "Open folder", AutoSize = true };
         open.Click += (_, _) => TrayApp.OpenFolder(_folder.Text);
-        AddRow(grid, "Save screenshots to", _folder, browse, open);
-        AddWide(grid, Hint("Every screenshot is saved here as a PNG and copied to your clipboard, ready to paste."));
+        AddRow(saving, "Save screenshots to", _folder, browse, open);
+        AddWide(saving, Hint("Every screenshot is saved here as a PNG and copied to your clipboard, ready to paste."));
 
-        AddWide(grid, SectionTitle("GIFs"));
-        AddRow(grid, "GIF quality", _gifQuality);
-        AddWide(grid, Hint("Standard: up to 960 px wide at 15 fps, small files, ideal for Discord. High: up to 1920 px at 30 fps, bigger files. For game and video footage, the MP4 option looks far better than any GIF."));
-        AddWide(grid, _saveMp4);
+        var recording = Page();
+        AddRow(recording, "GIF quality", _gifQuality);
+        AddWide(recording, Hint("Standard: up to 960 px wide at 15 fps, small files, ideal for Discord. High: up to 1920 px at 30 fps, bigger files. For game and video footage, the MP4 option looks far better than any GIF."));
+        AddWide(recording, _saveMp4);
 
-        AddWide(grid, SectionTitle("HDR mode"));
-        AddWide(grid, _hdrJxr);
-        AddWide(grid, _hdrPng);
-        AddWide(grid, Hint("When your screen is in HDR, also save true HDR copies next to the normal PNG. The normal PNG is still what gets copied, because most apps can't show HDR."));
+        var hdr = Page();
+        AddWide(hdr, _hdrJxr);
+        AddWide(hdr, _hdrPng);
+        AddWide(hdr, Hint("When your screen is in HDR, also save true HDR copies next to the normal PNG. The normal PNG is still what gets copied, because most apps can't show HDR."));
+        AddWide(hdr, HdrExample());
 
-        AddWide(grid, SectionTitle("Options"));
-        AddWide(grid, _sound);
-        AddWide(grid, _preview);
-        AddWide(grid, _freeze);
-        AddWide(grid, _pauseMedia);
-        AddWide(grid, _startup);
-        AddRow(grid, "Appearance", _theme);
+        var options = Page();
+        AddWide(options, _sound);
+        AddWide(options, _preview);
+        AddWide(options, _freeze);
+        AddWide(options, _pauseMedia);
+        AddWide(options, _startup);
+        AddRow(options, "Appearance", _theme);
+
+        var tabs = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 10, 0, 6) };
+        var pages = _pages = new Panel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Margin = Padding.Empty, Dock = DockStyle.Fill };
+        (string Name, TableLayoutPanel Page)[] all = [("Shortcuts", shortcuts), ("Saving", saving), ("GIFs", recording), ("HDR", hdr), ("Options", options)];
+        for (int i = 0; i < all.Length; i++)
+        {
+            var (name, page) = all[i];
+            int index = i;
+            page.Visible = false;
+            pages.Controls.Add(page);
+            var tab = new RadioButton
+            {
+                Text = name,
+                Appearance = Appearance.Button,
+                AutoSize = true,
+                MinimumSize = new Size(96, 30),
+                TextAlign = ContentAlignment.MiddleCenter,
+                Margin = new Padding(0, 0, 4, 0),
+            };
+            tab.CheckedChanged += (_, _) =>
+            {
+                page.Visible = tab.Checked;
+                if (tab.Checked) _lastTab = index;
+            };
+            tabs.Controls.Add(tab);
+        }
+        ((RadioButton)tabs.Controls[Math.Clamp(_lastTab, 0, all.Length - 1)]).Checked = true;
+        grid.Controls.Add(tabs);
+        grid.Controls.Add(pages);
 
         var about = new Label
         {
@@ -142,11 +168,11 @@ internal sealed class SettingsForm : Form
             ForeColor = SystemColors.GrayText,
             Margin = new Padding(3, 18, 3, 6),
         };
-        AddWide(grid, about);
+        grid.Controls.Add(about);
 
         var close = _closeButton;
         close.Click += (_, _) => Close();
-        // One row: "Buy me a beer" on the left, Close on the right. Every cell sizes to its content,
+        // One row: the links on the left, Close on the right. Every cell sizes to its content,
         // so nothing can be pushed out of view at any display scaling.
         var footer = new TableLayoutPanel { ColumnCount = 2, RowCount = 1, AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(0, 10, 0, 0) };
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -164,7 +190,7 @@ internal sealed class SettingsForm : Form
         }
         footer.Controls.Add(links, 0, 0);
         footer.Controls.Add(close, 1, 0);
-        AddWide(grid, footer);
+        grid.Controls.Add(footer);
 
         CancelButton = close;
         Controls.Add(grid);
@@ -226,8 +252,95 @@ internal sealed class SettingsForm : Form
         return panel;
     }
 
-    private static Label SectionTitle(string text) =>
-        new() { Text = text, AutoSize = true, Font = new Font("Segoe UI Semibold", 10.5f), Margin = new Padding(3, 16, 3, 6) };
+    /// <summary>
+    /// Side by side: what most screenshot tools save when Windows HDR is on (grey and washed out), and what
+    /// ClearShot saves (what you actually saw). Every screenshot and GIF gets this, no option needed.
+    /// </summary>
+    private static Control HdrExample()
+    {
+        var panel = new TableLayoutPanel { ColumnCount = 2, RowCount = 3, AutoSize = true, Margin = new Padding(0, 14, 0, 0) };
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        var title = new Label
+        {
+            Text = "Why HDR screenshots usually look wrong",
+            AutoSize = true,
+            Font = new Font("Segoe UI Semibold", 10.5f),
+            Margin = new Padding(3, 0, 3, 6),
+        };
+        panel.Controls.Add(title, 0, 0);
+        panel.SetColumnSpan(title, 2);
+        (string Resource, string Caption)[] pictures =
+        [
+            ("hdr-other-apps.jpg", "Most screenshot tools with HDR on: grey and washed out"),
+            ("hdr-clearshot.jpg", "ClearShot: the colours you actually saw"),
+        ];
+        for (int i = 0; i < pictures.Length; i++)
+        {
+            using var stream = typeof(SettingsForm).Assembly.GetManifestResourceStream(pictures[i].Resource);
+            var picture = new PictureBox
+            {
+                Image = stream is null ? null : Image.FromStream(stream),
+                SizeMode = PictureBoxSizeMode.Zoom,
+                Size = new Size(308, 173),
+                Margin = new Padding(3, 0, i == 0 ? 12 : 3, 4),
+            };
+            panel.Controls.Add(picture, i, 1);
+            panel.Controls.Add(new Label { Text = pictures[i].Caption, AutoSize = true, MaximumSize = new Size(308, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(3, 0, 3, 0) }, i, 2);
+        }
+        return panel;
+    }
+
+    private static Label SectionTitle(string text, bool first = false) =>
+        new() { Text = text, AutoSize = true, Font = new Font("Segoe UI Semibold", 10.5f), Margin = new Padding(3, first ? 4 : 16, 3, 6) };
+
+    // The tab that was open last, so rebuilding the window (for a new appearance) keeps you where you were.
+    private static int _lastTab;
+    private Panel? _pages;
+
+    /// <summary>Makes the tab area as big as the biggest tab, so the window keeps one size whichever tab is open.</summary>
+    private void FitTallestTab()
+    {
+        if (_pages is null) return;
+        _pages.MinimumSize = Size.Empty;
+        // Lay each tab out for real and keep the biggest. Predicted sizes can differ from real ones where text wraps.
+        var shown = _pages.Controls.Cast<Control>().Select(c => c.Visible).ToArray();
+        var biggest = Size.Empty;
+        foreach (Control page in _pages.Controls)
+        {
+            foreach (Control other in _pages.Controls) other.Visible = ReferenceEquals(other, page);
+            _pages.PerformLayout();
+            PerformLayout();
+            biggest = new Size(Math.Max(biggest.Width, page.Width), Math.Max(biggest.Height, page.Height));
+        }
+        for (int i = 0; i < shown.Length; i++) _pages.Controls[i].Visible = shown[i];
+        _pages.MinimumSize = biggest;
+    }
+
+    protected override void OnLoad(EventArgs e)
+    {
+        // After the window has been scaled for the display: measuring before gives unscaled sizes.
+        base.OnLoad(e);
+        FitTallestTab();
+    }
+
+    protected override void OnDpiChanged(DpiChangedEventArgs e)
+    {
+        base.OnDpiChanged(e);
+        // Moving to a monitor with different scaling resizes everything: measure again.
+        FitTallestTab();
+    }
+
+    /// <summary>One tab's contents: label column, a fixed-width field column, then room for buttons.</summary>
+    private static TableLayoutPanel Page()
+    {
+        var page = new TableLayoutPanel { ColumnCount = 4, AutoSize = true, Dock = DockStyle.Top, Margin = Padding.Empty, MinimumSize = new Size(640, 0) };
+        page.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
+        page.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 300));
+        page.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        page.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        return page;
+    }
 
     private static Label Hint(string text) =>
         new() { Text = text, AutoSize = true, MaximumSize = new Size(640, 0), ForeColor = SystemColors.GrayText, Margin = new Padding(3, 2, 3, 4) };
@@ -235,20 +348,24 @@ internal sealed class SettingsForm : Form
     private static Hotkey Parse(string text, string fallback) =>
         Hotkey.TryParse(text, out var hk) ? hk : Hotkey.TryParse(fallback, out var fb) ? fb : default;
 
-    private static void AddRow(TableLayoutPanel grid, string label, Control field, params Control[] extras)
+    /// <returns>The row's controls (to show or hide them together).</returns>
+    private static Control[] AddRow(TableLayoutPanel grid, string label, Control field, params Control[] extras)
     {
         if (field is ComboBox) field.Anchor = AnchorStyles.Left;
         int row = grid.RowCount++;
-        grid.Controls.Add(new Label { Text = label, AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(3, 7, 12, 3) }, 0, row);
+        var name = new Label { Text = label, AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(3, 7, 12, 3) };
+        grid.Controls.Add(name, 0, row);
         grid.Controls.Add(field, 1, row);
         for (int i = 0; i < extras.Length; i++) grid.Controls.Add(extras[i], 2 + i, row);
+        return [name, field, .. extras];
     }
 
-    private static void AddWide(TableLayoutPanel grid, Control control)
+    private static Control AddWide(TableLayoutPanel grid, Control control)
     {
         int row = grid.RowCount++;
         grid.Controls.Add(control, 0, row);
         grid.SetColumnSpan(control, 4);
+        return control;
     }
 
     private void ChooseFolder()
@@ -262,8 +379,8 @@ internal sealed class SettingsForm : Form
     /// <summary>Checks and stores what's in the window, then tells ClearShot to save it. Invalid input is undone.</summary>
     internal void ApplyChange()
     {
-        var shortcuts = new[] { _fullScreen.Value, _region.Value, _gif.Value, _edit.Value };
-        if (shortcuts.Distinct().Count() != shortcuts.Length)
+        var shortcuts = new List<Hotkey> { _fullScreen.Value, _region.Value, _gif.Value, _edit.Value };
+        if (shortcuts.Distinct().Count() != shortcuts.Count)
         {
             MessageBox.Show(this, "Each shortcut needs to be different.", AppInfo.Name, MessageBoxButtons.OK, MessageBoxIcon.Information);
             _fullScreen.Value = Parse(_settings.FullScreenHotkey, "Alt+C");

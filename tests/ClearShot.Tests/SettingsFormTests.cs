@@ -78,3 +78,47 @@ public class SettingsFormAutoSaveTests
         if (failure is not null) throw failure;
     }
 }
+
+[Collection("Editor windows")] // real windows shown on screen take turns
+public class SettingsTabsTests
+{
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool SetProcessDpiAwarenessContext(IntPtr value);
+
+    /// <summary>25/09: the window changed height as you switched tabs. It must keep one size.</summary>
+    [Fact]
+    public void Window_keeps_one_size_across_all_tabs()
+    {
+        // As the app runs: per-monitor DPI aware, so the window is scaled for the display (this is where it went wrong).
+        SetProcessDpiAwarenessContext(new IntPtr(-4));
+        Exception? failure = null;
+        var t = new Thread(() =>
+        {
+            try
+            {
+                static IEnumerable<Control> All(Control c) => c.Controls.Cast<Control>().SelectMany(x => new[] { x }.Concat(All(x)));
+                {
+                    using var form = new SettingsForm(new Settings()) { StartPosition = FormStartPosition.Manual, Location = new Point(-30000, -30000) };
+                    form.Show();
+                    Application.DoEvents();
+                    var tabs = All(form).OfType<RadioButton>().Where(r => r.Appearance == Appearance.Button).ToList();
+                    Assert.Equal(5, tabs.Count);
+                    var sizes = new HashSet<Size>();
+                    foreach (var tab in tabs.Concat(tabs))
+                    {
+                        tab.Checked = true;
+                        Application.DoEvents();
+                        form.PerformLayout();
+                        sizes.Add(form.Size);
+                    }
+                    Assert.Single(sizes);
+                    form.Close();
+                }
+            }
+            catch (Exception ex) { failure = ex; }
+        });
+        t.SetApartmentState(ApartmentState.STA);
+        t.Start(); t.Join();
+        if (failure is not null) throw failure;
+    }
+}
