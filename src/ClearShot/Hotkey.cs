@@ -25,6 +25,9 @@ internal readonly record struct Hotkey(Keys Key, bool Ctrl, bool Alt, bool Shift
         [Keys.Pause] = "Pause",
         [Keys.Insert] = "Insert",
         [Keys.Delete] = "Delete",
+        [Keys.MButton] = "Middle mouse button",
+        [Keys.XButton1] = "Mouse button 4 (back)",
+        [Keys.XButton2] = "Mouse button 5 (forward)",
     };
 
     private static readonly HashSet<Keys> ModifierOnlyKeys =
@@ -39,21 +42,13 @@ internal readonly record struct Hotkey(Keys Key, bool Ctrl, bool Alt, bool Shift
     public uint NativeModifiers =>
         (Ctrl ? ModControl : 0) | (Alt ? ModAlt : 0) | (Shift ? ModShift : 0) | (Win ? ModWin : 0) | ModNoRepeat;
 
-    // Keys nobody types in normal use, so they're fine as a shortcut on their own.
-    private static readonly HashSet<Keys> StandaloneKeys =
-    [
-        Keys.PrintScreen, Keys.Pause, Keys.Scroll, Keys.Insert,
-        Keys.F1, Keys.F2, Keys.F3, Keys.F4, Keys.F5, Keys.F6, Keys.F7, Keys.F8, Keys.F9, Keys.F10, Keys.F11, Keys.F12,
-        Keys.F13, Keys.F14, Keys.F15, Keys.F16, Keys.F17, Keys.F18, Keys.F19, Keys.F20, Keys.F21, Keys.F22, Keys.F23, Keys.F24,
-    ];
-
     /// <summary>
-    /// False for shortcuts that would hijack ordinary typing, such as C or Shift + C:
-    /// a global shortcut fires everywhere, so letters, numbers and the like need Ctrl, Alt or Win.
+    /// Any key can be a shortcut, on its own or with Ctrl/Alt/Shift/Win (it's the user's choice: a lone letter then fires
+    /// everywhere). Mouse buttons too, except left and right click, which would make clicking anything impossible.
     /// </summary>
-    public bool IsSafeAsGlobalShortcut => Ctrl || Alt || Win || StandaloneKeys.Contains(Key);
+    public static bool IsUsableKey(Keys key) => !ModifierOnlyKeys.Contains(key) && key is not (Keys.LButton or Keys.RButton) && Enum.IsDefined(key);
 
-    public static bool IsUsableKey(Keys key) => !ModifierOnlyKeys.Contains(key) && Enum.IsDefined(key);
+    public bool IsMouse => MouseShortcuts.IsMouseButton(Key);
 
     public static bool TryParse(string? text, out Hotkey hotkey)
     {

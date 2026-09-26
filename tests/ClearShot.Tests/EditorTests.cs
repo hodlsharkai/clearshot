@@ -562,7 +562,7 @@ public class EditShortcutSettingsTests
         {
             File.Delete(path);
         }
-        Assert.True(Hotkey.TryParse("Alt+Shift+E", out var hk) && hk.IsSafeAsGlobalShortcut);
+        Assert.True(Hotkey.TryParse("Alt+Shift+E", out _));
     }
 }
 
@@ -1142,4 +1142,68 @@ public class SonyPathTests
         Assert.False(SonyTouchpad.IsSonyPath(@"\\?\hid#vid_054c&pid_0268#1#{4d1e55b2}")); // a PS3 pad: not supported
         Assert.False(SonyTouchpad.IsSonyPath(@"\\?\hid#vid_046d&pid_c52b#1#{4d1e55b2}"));
     }
+}
+
+[Collection("Editor windows")]
+public class MouseShortcutTests
+{
+    [Fact]
+    public void Mouse_messages_map_to_buttons_and_match_exact_modifiers()
+    {
+        Assert.Equal((Keys.MButton, true), MouseShortcuts.ButtonOf(0x207, 0));
+        Assert.Equal((Keys.XButton1, true), MouseShortcuts.ButtonOf(0x20B, 1u << 16));
+        Assert.Equal((Keys.XButton2, false), MouseShortcuts.ButtonOf(0x20C, 2u << 16));
+        Assert.Null(MouseShortcuts.ButtonOf(0x201, 0)); // left button: never a shortcut
+        Hotkey.TryParse("XButton1", out var back);
+        Hotkey.TryParse("Ctrl+MButton", out var ctrlMiddle);
+        var set = new Dictionary<int, Hotkey> { [1] = back, [2] = ctrlMiddle };
+        Assert.Equal(1, MouseShortcuts.Match(set, Keys.XButton1, false, false, false, false));
+        Assert.Null(MouseShortcuts.Match(set, Keys.XButton1, true, false, false, false)); // Ctrl held: not the plain one
+        Assert.Equal(2, MouseShortcuts.Match(set, Keys.MButton, true, false, false, false));
+        Assert.Null(MouseShortcuts.Match(set, Keys.MButton, false, false, false, false));
+    }
+
+    [DllImport("user32.dll", SetLastError = true)] private static extern uint SendInput(uint count, Input[] inputs, int size);
+    [StructLayout(LayoutKind.Sequential)] private struct Input { public uint Type; public MouseInput Mi; }
+    [StructLayout(LayoutKind.Sequential)] private struct MouseInput { public int Dx, Dy; public uint Data, Flags, Time; public IntPtr Extra; }
+
+    /// <summary>A real mouse-button-5 click fires the shortcut and is used up (nothing behind sees it).</summary>
+    [Fact]
+    public void A_real_mouse_button_click_fires_the_shortcut()
+    {
+        Exception? failure = null;
+        var t = new Thread(() =>
+        {
+            try
+            {
+                using var mouse = new MouseShortcuts();
+                int fired = 0;
+                mouse.Pressed += _ => fired++;
+                Hotkey.TryParse("Ctrl+Alt+Shift+XButton2", out var hk); // a combination nobody is holding by accident
+                Assert.True(mouse.Register(7, hk));
+                // Hold Ctrl+Alt+Shift, click mouse 5, let go. XDOWN 0x80 / XUP 0x100, XBUTTON2 = 2.
+                // Sent from another thread while this one pumps messages, as a real click would arrive.
+                var send = Task.Run(() =>
+                {
+                    var keys = new[] { 0x11, 0x12, 0x10 };
+                    foreach (var k in keys) keybd_event((byte)k, 0, 0, IntPtr.Zero);
+                    var click = new[]
+                    {
+                        new Input { Type = 0, Mi = new MouseInput { Data = 2, Flags = 0x80 } },
+                        new Input { Type = 0, Mi = new MouseInput { Data = 2, Flags = 0x100 } },
+                    };
+                    SendInput(2, click, Marshal.SizeOf<Input>());
+                    foreach (var k in keys) keybd_event((byte)k, 0, 2, IntPtr.Zero);
+                });
+                for (int i = 0; i < 100 && (fired == 0 || !send.IsCompleted); i++) { Application.DoEvents(); Thread.Sleep(5); }
+                Assert.Equal(1, fired);
+            }
+            catch (Exception ex) { failure = ex; }
+        });
+        t.SetApartmentState(ApartmentState.STA);
+        t.Start(); t.Join();
+        if (failure is not null) throw failure;
+    }
+
+    [DllImport("user32.dll")] private static extern void keybd_event(byte vk, byte scan, uint flags, IntPtr extra);
 }

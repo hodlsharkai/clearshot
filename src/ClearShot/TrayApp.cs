@@ -16,6 +16,7 @@ internal sealed class TrayApp : ApplicationContext
 
     private readonly Settings _settings = Settings.Load();
     private readonly HotkeyManager _hotkeys = new();
+    private readonly MouseShortcuts _mouse = new();
     private readonly ShutterSound _sound = new();
     private readonly NotifyIcon _tray;
     private readonly ToolStripMenuItem _fullScreenItem = new("Capture full screen");
@@ -77,14 +78,9 @@ internal sealed class TrayApp : ApplicationContext
         };
         _tray.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) ShowWindow(); };
 
-        _hotkeys.Pressed += async id =>
-        {
-            if (id == EscapeId) { _cancelSelection?.Invoke(); _gifStop?.Cancel(); return; }
-            if (id == GifId) { await RecordGif(); return; }
-            if (id == GifEditId) { await RecordGif(edit: true); return; }
-            if (id == EditId) { await CaptureAndEdit(); return; }
-            await Capture(region: id == RegionId);
-        };
+        _hotkeys.Pressed += async id => await OnShortcut(id);
+        // Mouse-button shortcuts arrive inside the mouse hook, which must return at once: act on them just after.
+        _mouse.Pressed += id => _uiThread.BeginInvoke(async () => await OnShortcut(id));
         Task.Run(ScreenCapturer.WarmUp);
         // Get the emoji picker's pictures ready well before anyone opens it (a few seconds of background work, once).
         _ = Task.Delay(TimeSpan.FromSeconds(3)).ContinueWith(_ =>
@@ -103,6 +99,15 @@ internal sealed class TrayApp : ApplicationContext
                 ToolTipIcon.None);
         }
         if (openWindow) _uiThread.BeginInvoke(ShowWindow);
+    }
+
+    private async Task OnShortcut(int id)
+    {
+        if (id == EscapeId) { _cancelSelection?.Invoke(); _gifStop?.Cancel(); return; }
+        if (id == GifId) { await RecordGif(); return; }
+        if (id == GifEditId) { await RecordGif(edit: true); return; }
+        if (id == EditId) { await CaptureAndEdit(); return; }
+        await Capture(region: id == RegionId);
     }
 
     private static string HotkeyText(string text) => Hotkey.TryParse(text, out var hk) ? hk.DisplayText : text;
@@ -172,13 +177,20 @@ internal sealed class TrayApp : ApplicationContext
 
     private void Register(int id, string text, ToolStripMenuItem item, List<string> failed)
     {
-        if (!Hotkey.TryParse(text, out var hotkey) || !hotkey.IsSafeAsGlobalShortcut)
+        if (!Hotkey.TryParse(text, out var hotkey))
         {
             failed.Add($"\"{text}\"");
             item.ShortcutKeyDisplayString = "";
             return;
         }
         item.ShortcutKeyDisplayString = hotkey.DisplayText;
+        if (hotkey.IsMouse)
+        {
+            _hotkeys.Unregister(id);
+            if (!_mouse.Register(id, hotkey)) failed.Add(hotkey.DisplayText);
+            return;
+        }
+        _mouse.Unregister(id);
         if (!_hotkeys.Register(id, hotkey))
         {
             Log.Write($"Hotkey {hotkey} could not be registered");
@@ -640,7 +652,7 @@ internal sealed class TrayApp : ApplicationContext
         // While a shortcut box is recording, pressing a shortcut should record it, not take a screenshot.
         _settingsForm.RecordingShortcut += recording =>
         {
-            if (recording) _hotkeys.UnregisterAll();
+            if (recording) { _hotkeys.UnregisterAll(); _mouse.UnregisterAll(); }
             else RegisterHotkeys(announceProblems: true);
         };
         _settingsForm.FormClosed += (_, _) =>
@@ -687,6 +699,7 @@ internal sealed class TrayApp : ApplicationContext
             _tray.Visible = false;
             _tray.Dispose();
             _hotkeys.Dispose();
+            _mouse.Dispose();
             _controller?.Dispose();
             _sonyPad?.Dispose();
             _sound.Dispose();

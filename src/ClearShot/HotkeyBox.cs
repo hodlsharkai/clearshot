@@ -4,14 +4,14 @@ using System.Runtime.InteropServices;
 namespace ClearShot;
 
 /// <summary>
-/// Click it, then press the shortcut. Works whether the keys are held together (hold Alt + Shift, press C)
-/// or tapped one after another (Alt, Shift, C): modifiers tapped while recording are remembered until a
-/// real key arrives.
+/// Click it, then press the shortcut: any key, alone or with Ctrl/Alt/Shift/Win, or a mouse button (middle, 4 or 5).
+/// Works whether the keys are held together (hold Alt + Shift, press C) or tapped one after another (Alt, Shift, C):
+/// modifiers tapped while recording are remembered until a real key or button arrives.
 /// </summary>
 internal sealed class HotkeyBox : TextBox
 {
     private const int WmSysKeyUp = 0x105, VkMenu = 0x12, VkF10 = 0x79;
-    private const string Prompt = "Press a shortcut, e.g. Alt + C";
+    private const string Prompt = "Press keys or a mouse button (middle, 4 or 5)";
 
     private Hotkey _value;
     private bool _tappedCtrl, _tappedAlt, _tappedShift, _tappedWin;
@@ -69,6 +69,22 @@ internal sealed class HotkeyBox : TextBox
         base.OnKeyUp(e);
     }
 
+    // A mouse button pressed while recording becomes the shortcut (middle, back, forward; left and right just click).
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        base.OnMouseDown(e);
+        var button = e.Button switch
+        {
+            MouseButtons.Middle => Keys.MButton,
+            MouseButtons.XButton1 => Keys.XButton1,
+            MouseButtons.XButton2 => Keys.XButton2,
+            _ => Keys.None,
+        };
+        if (button == Keys.None) return;
+        if (!Focused) Focus();
+        HandleKeyDown(button, ModifierKeys, WinKeyHeld());
+    }
+
     protected override void WndProc(ref Message m)
     {
         // Letting go of Alt (or F10) on its own normally jumps to the window menu and swallows the next key.
@@ -108,11 +124,6 @@ internal sealed class HotkeyBox : TextBox
             winHeld || _tappedWin);
         ClearTapped();
 
-        if (!candidate.IsSafeAsGlobalShortcut)
-        {
-            Text = $"{candidate.DisplayText} would fire while you type. Add Ctrl, Alt or Win.";
-            return;
-        }
         Value = candidate;
         Done?.Invoke(this, EventArgs.Empty);
     }

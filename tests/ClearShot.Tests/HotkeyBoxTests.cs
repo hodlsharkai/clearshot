@@ -41,19 +41,30 @@ public class HotkeyBoxTests
         Assert.Equal("Alt+Shift+C", box.Value.ToString());
     });
 
+    /// <summary>26/09: any key is allowed on its own, with no warning: it's the user's choice (Page Down, a letter...).</summary>
     [Fact]
-    public void A_lone_letter_is_refused_and_the_old_shortcut_kept() => OnSta(box =>
+    public void Any_key_alone_is_accepted_without_a_warning() => OnSta(box =>
     {
+        box.HandleKeyDown(Keys.PageDown, Keys.None, false);
+        Assert.Equal("PageDown", box.Value.ToString());
         box.HandleKeyDown(Keys.C, Keys.None, false);
-        Assert.Equal("Alt+C", box.Value.ToString());
-        Assert.Contains("Add Ctrl, Alt or Win", box.Text);
+        Assert.Equal("C", box.Value.ToString());
+        box.HandleKeyDown(Keys.S, Keys.Shift, false);
+        Assert.Equal("Shift+S", box.Value.ToString());
+        Assert.DoesNotContain("would fire", box.Text);
     });
 
     [Fact]
-    public void Shift_plus_letter_is_refused() => OnSta(box =>
+    public void Mouse_buttons_record_alone_or_with_modifiers() => OnSta(box =>
     {
-        box.HandleKeyDown(Keys.S, Keys.Shift, false);
-        Assert.Equal("Alt+C", box.Value.ToString());
+        box.HandleKeyDown(Keys.XButton1, Keys.None, false);
+        Assert.Equal("XButton1", box.Value.ToString());
+        Assert.Equal("Mouse button 4 (back)", box.Value.DisplayText);
+        box.HandleKeyDown(Keys.MButton, Keys.Control, false);
+        Assert.Equal("Ctrl+MButton", box.Value.ToString());
+        Assert.True(Hotkey.TryParse("Ctrl+XButton2", out var hk) && hk.IsMouse);
+        Assert.False(Hotkey.TryParse("LButton", out _)); // left and right click can't be shortcuts
+        Assert.False(Hotkey.TryParse("RButton", out _));
     });
 
     [Fact]
