@@ -108,6 +108,6 @@ Only send each coin on its matching network. The same addresses, with QR codes, 
 
 ## Licence
 
-MIT
+[PolyForm Noncommercial 1.0.0](LICENSE). ClearShot is free to use, share and change for anything that isn't commercial: personal use, hobby projects, schools, charities and so on. You can't sell it, charge for it or build it into a paid product. The code stays public so anyone can see what it does.
 
-ClearShot uses [ImageSharp](https://github.com/SixLabors/ImageSharp) to choose GIF palettes, licensed to this open-source project under the Apache License 2.0 (Six Labors Split License), plus [Vortice.Windows](https://github.com/amerkoleci/Vortice.Windows) (MIT) and [QRCoder](https://github.com/codebude/QRCoder) (MIT).
+ClearShot uses [ImageSharp](https://github.com/SixLabors/ImageSharp) to choose GIF palettes, licensed to this source-available project under the Apache License 2.0 (Six Labors Split License), plus [Vortice.Windows](https://github.com/amerkoleci/Vortice.Windows) (MIT) and [QRCoder](https://github.com/codebude/QRCoder) (MIT).
